@@ -1,0 +1,12 @@
+using System.Security.Claims;using System.Security.Cryptography;using EduHub.Api.Infrastructure;using Microsoft.AspNetCore.Authorization;using Microsoft.AspNetCore.Mvc;using Microsoft.EntityFrameworkCore;
+namespace EduHub.Api.Modules.Academics;
+[ApiController,Route("api/classes"),Authorize]
+public class ClassesController(EduHubDbContext db):ControllerBase{
+ int Uid=>int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+ [HttpGet("mine")]public async Task<IActionResult> Mine(){if(User.IsInRole("Lecturer"))return Ok(await db.Classes.Include(x=>x.Department).Where(x=>x.LecturerId==Uid).ToListAsync());if(User.IsInRole("Student"))return Ok(await db.ClassMembers.Include(x=>x.ClassRoom).ThenInclude(x=>x.Department).Where(x=>x.StudentId==Uid&&x.Status=="Active").Select(x=>x.ClassRoom).ToListAsync());return Ok(await db.Classes.Include(x=>x.Department).ToListAsync());}
+ public record CreateRequest(string Name,string? Description,int DepartmentId);
+ [HttpPost,Authorize(Roles="Lecturer")]public async Task<IActionResult> Create(CreateRequest r){if(!await db.Departments.AnyAsync(x=>x.Id==r.DepartmentId))return BadRequest(new{message="Khoa không tồn tại."});var c=new ClassRoom{Name=r.Name,Description=r.Description,DepartmentId=r.DepartmentId,LecturerId=Uid,JoinCode=Convert.ToHexString(RandomNumberGenerator.GetBytes(4))};db.Classes.Add(c);await db.SaveChangesAsync();return Ok(c);}
+ public record JoinRequest(string JoinCode);
+ [HttpPost("join"),Authorize(Roles="Student")]public async Task<IActionResult> Join(JoinRequest r){var c=await db.Classes.SingleOrDefaultAsync(x=>x.JoinCode==r.JoinCode.Trim().ToUpper()&&x.Status=="Active");if(c is null)return NotFound(new{message="Mã lớp không hợp lệ hoặc lớp đã ngừng hoạt động."});if(await db.ClassMembers.AnyAsync(x=>x.ClassRoomId==c.Id&&x.StudentId==Uid))return Conflict(new{message="Bạn đã tham gia lớp."});db.ClassMembers.Add(new ClassMember{ClassRoomId=c.Id,StudentId=Uid});await db.SaveChangesAsync();return Ok(new{message="Tham gia lớp thành công",c.Id,c.Name});}
+ [HttpGet("{id:int}/members")]public async Task<IActionResult> Members(int id){var c=await db.Classes.FindAsync(id);if(c is null)return NotFound();if(!User.IsInRole("Admin")&&c.LecturerId!=Uid&&!await db.ClassMembers.AnyAsync(x=>x.ClassRoomId==id&&x.StudentId==Uid&&x.Status=="Active"))return Forbid();return Ok(await db.ClassMembers.Include(x=>x.Student).Where(x=>x.ClassRoomId==id).Select(x=>new{x.Id,x.StudentId,x.Student.FullName,x.Student.Email,x.JoinedAt,x.Status}).ToListAsync());}
+}

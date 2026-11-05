@@ -1,0 +1,3 @@
+using EduHub.Api.Modules.Academics;using EduHub.Api.Modules.Identity;
+namespace EduHub.Api.Modules.Assignments;
+public class Assignment{public int Id{get;set;}public int ClassRoomId{get;set;}public ClassRoom ClassRoom{get;set;}=null!;public int CreatedById{get;set;}public User CreatedBy{get;set;}=null!;public string Title{get;set;}="";public string Description{get;set;}="";public DateTime Deadline{get;set;}public bool AllowResubmit{get;set;}=true;public int MaxAttempts{get;set;}=2;public string Status{get;set;}="Published";public DateTime CreatedAt{get;set;}=DateTime.UtcNow;public List<Submission> Submissions{get;set;}=[];}

@@ -1,0 +1,3 @@
+const API=import.meta.env.VITE_API_URL||'http://localhost:8080';
+export function token(){return localStorage.getItem('eduhub_token')}
+export async function api(path:string,options:RequestInit={}){const t=token();const r=await fetch(API+path,{...options,headers:{'Content-Type':'application/json',...(t?{Authorization:`Bearer ${t}`}:{ }),...options.headers}});if(!r.ok){const b=await r.json().catch(()=>({message:'Có lỗi xảy ra'}));throw new Error(b.message||`HTTP ${r.status}`)}if(r.status===204)return null;return r.json()}
