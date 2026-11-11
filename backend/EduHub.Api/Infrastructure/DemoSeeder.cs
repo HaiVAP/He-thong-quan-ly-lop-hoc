@@ -1,6 +1,7 @@
 using EduHub.Api.Infrastructure;
 using EduHub.Api.Modules.Academics;
 using EduHub.Api.Modules.Identity;
+using EduHub.Api.Modules.Materials;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduHub.Api.Infrastructure;
@@ -140,7 +141,56 @@ public static class DemoSeeder
             new ClassMember { ClassRoomId = class1.Id, StudentId = student3.Id, Status = "Active" },
             new ClassMember { ClassRoomId = class2.Id, StudentId = student1.Id, Status = "Active" }
         );
+        await db.SaveChangesAsync();
 
+        // 5. Seed Material Categories & Materials (Sprint 2 / Module 2)
+        var cat1 = new MaterialCategory
+        {
+            ClassRoomId = class1.Id,
+            Name = "Chương 1: Tổng quan & Kiến trúc Modular Monolith",
+            Description = "Lý thuyết kiến trúc phần mềm và thiết kế mô-đun",
+            SortOrder = 1
+        };
+
+        var cat2 = new MaterialCategory
+        {
+            ClassRoomId = class1.Id,
+            Name = "Chương 2: Thiết kế REST API & EF Core",
+            Description = "Thực hành xây dựng API với .NET 8 và PostgreSQL",
+            SortOrder = 2
+        };
+
+        db.MaterialCategories.AddRange(cat1, cat2);
+        await db.SaveChangesAsync();
+
+        db.Materials.AddRange(
+            new Material
+            {
+                ClassRoomId = class1.Id,
+                CategoryId = cat1.Id,
+                CreatedById = lecturer1.Id,
+                Title = "Slide Bài giảng Chương 1 - Kiến trúc Modular Monolith",
+                Description = "Tài liệu lý thuyết tổng quan về kiến trúc và đóng gói Docker",
+                FileName = "BaiGiang_Chuong1_Modular_Monolith.pdf",
+                FileKey = "20261111/demo_chuong1_slide.pdf",
+                FileUrl = "/api/files/download/20261111/demo_chuong1_slide.pdf?filename=BaiGiang_Chuong1_Modular_Monolith.pdf",
+                MimeType = "application/pdf",
+                FileSizeBytes = 2450000
+            },
+            new Material
+            {
+                ClassRoomId = class1.Id,
+                CategoryId = cat2.Id,
+                CreatedById = lecturer1.Id,
+                Title = "Tài liệu Hướng dẫn Thực hành Web API với EF Core",
+                Description = "Hướng dẫn chi tiết xây dựng Controller, DbContext và JWT Authentication",
+                FileName = "HuongDan_ThucHanh_WebAPI.docx",
+                FileKey = "20261111/demo_huong_dan_api.docx",
+                FileUrl = "/api/files/download/20261111/demo_huong_dan_api.docx?filename=HuongDan_ThucHanh_WebAPI.docx",
+                MimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                FileSizeBytes = 1120000
+            }
+        );
         await db.SaveChangesAsync();
     }
 }

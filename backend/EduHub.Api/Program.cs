@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using EduHub.Api.Common.Middlewares;
 using EduHub.Api.Infrastructure;
 using EduHub.Api.Modules.Identity;
+using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -88,6 +89,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
 // 5. Health Checks & CORS
