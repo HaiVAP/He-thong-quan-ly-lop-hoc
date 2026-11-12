@@ -3,9 +3,9 @@ import {
   GraduationCap, LayoutDashboard, Users, ClipboardList, BookOpen,
   Megaphone, LogOut, Plus, KeyRound, Shield, Building2, Search,
   Lock, Unlock, Trash2, Clock, Send, FileText,
-  RefreshCw, X
+  RefreshCw, X, FolderOpen
 } from 'lucide-react';
-import { api, token } from './api';
+import { API, api, token } from './api';
 
 type User = {
   id: number;
@@ -80,6 +80,31 @@ type Announcement = {
   author: { id: number; fullName: string; email: string };
 };
 
+type MaterialCategory = {
+  id: number;
+  classRoomId?: number;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  createdAt?: string;
+  materialCount?: number;
+};
+
+type Material = {
+  id: number;
+  classRoomId?: number;
+  categoryId?: number | null;
+  categoryName?: string | null;
+  title: string;
+  description?: string;
+  fileName: string;
+  fileUrl: string;
+  fileSizeBytes: number;
+  mimeType?: string;
+  createdAt?: string;
+  author?: { id: number; fullName: string; email: string };
+};
+
 const roleLabel = (r: string) => {
   if (r === 'Admin') return 'Quản trị viên';
   if (r === 'Lecturer') return 'Giảng viên';
@@ -96,7 +121,7 @@ export default function App() {
   const [message, setMessage] = useState('');
 
   // Navigation
-  const [page, setPage] = useState<'home' | 'classes' | 'users' | 'departments' | 'assignments' | 'announcements'>('home');
+  const [page, setPage] = useState<'home' | 'classes' | 'users' | 'departments' | 'assignments' | 'materials' | 'announcements'>('home');
 
   // Data states
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -107,6 +132,9 @@ export default function App() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [categories, setCategories] = useState<MaterialCategory[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [materialCategoryFilter, setMaterialCategoryFilter] = useState<number | 'all'>('all');
 
   // Admin users state
   const [userList, setUserList] = useState<User[]>([]);
@@ -122,6 +150,8 @@ export default function App() {
   const [showGradeModal, setShowGradeModal] = useState<Submission | null>(null);
   const [showAnnounceModal, setShowAnnounceModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showMaterialModal, setShowMaterialModal] = useState(false);
 
   // Form states
   const [newClassName, setNewClassName] = useState('');
@@ -142,6 +172,14 @@ export default function App() {
   const [announceContent, setAnnounceContent] = useState('');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDescription, setNewCategoryDescription] = useState('');
+  const [newCategorySortOrder, setNewCategorySortOrder] = useState<number>(0);
+  const [newMaterialTitle, setNewMaterialTitle] = useState('');
+  const [newMaterialDescription, setNewMaterialDescription] = useState('');
+  const [newMaterialCategoryId, setNewMaterialCategoryId] = useState<number | null>(null);
+  const [newMaterialFile, setNewMaterialFile] = useState<File | null>(null);
+  const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
 
   async function loadInitial() {
     try {
@@ -222,14 +260,19 @@ export default function App() {
   async function selectClass(c: ClassItem) {
     setSelectedClass(c);
     try {
-      const [m, a, ann] = await Promise.all([
+      const [m, a, ann, cat, mat] = await Promise.all([
         api(`/api/classes/${c.id}/members`),
         api(`/api/classes/${c.id}/assignments`),
-        api(`/api/classes/${c.id}/announcements`)
+        api(`/api/classes/${c.id}/announcements`),
+        api(`/api/classes/${c.id}/categories`),
+        api(`/api/classes/${c.id}/materials`)
       ]);
       setMembers(m || []);
       setAssignments(a || []);
       setAnnouncements(ann || []);
+      setCategories(cat || []);
+      setMaterials(mat || []);
+      setMaterialCategoryFilter('all');
     } catch (err) {
       setMessage((err as Error).message);
     }
@@ -510,6 +553,139 @@ export default function App() {
     }
   }
 
+  async function refreshMaterials(classId: number, categoryId?: number | 'all') {
+    try {
+      const path = categoryId && categoryId !== 'all'
+        ? `/api/classes/${classId}/materials?categoryId=${categoryId}`
+        : `/api/classes/${classId}/materials`;
+      const [cat, mat] = await Promise.all([
+        api(`/api/classes/${classId}/categories`),
+        api(path)
+      ]);
+      setCategories(cat || []);
+      setMaterials(mat || []);
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
+  async function handleCreateCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedClass) return;
+    try {
+      await api(`/api/classes/${selectedClass.id}/categories`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newCategoryName,
+          description: newCategoryDescription,
+          sortOrder: Number(newCategorySortOrder)
+        })
+      });
+      setShowCategoryModal(false);
+      setNewCategoryName('');
+      setNewCategoryDescription('');
+      setNewCategorySortOrder(0);
+      await refreshMaterials(selectedClass.id, materialCategoryFilter);
+      setMessage('Tạo chương mục thành công!');
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
+  async function handleDeleteCategory(categoryId: number) {
+    if (!selectedClass || !confirm('Bạn có chắc muốn xóa chương mục này?')) return;
+    try {
+      await api(`/api/categories/${categoryId}`, { method: 'DELETE' });
+      await refreshMaterials(selectedClass.id, materialCategoryFilter);
+      setMessage('Đã xóa chương mục thành công.');
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
+  async function handleCreateMaterial(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedClass || !newMaterialFile) {
+      setMessage('Vui lòng chọn tệp tài liệu để đăng lên.');
+      return;
+    }
+
+    try {
+      setIsUploadingMaterial(true);
+      const presigned = await api('/api/files/presigned-upload-url', {
+        method: 'POST',
+        body: JSON.stringify({
+          fileName: newMaterialFile.name,
+          contentType: newMaterialFile.type || 'application/octet-stream',
+          sizeBytes: newMaterialFile.size
+        })
+      });
+
+      const uploadUrl = presigned.uploadUrl.startsWith('http') ? presigned.uploadUrl : `${API}${presigned.uploadUrl}`;
+      const uploadResponse = await fetch(uploadUrl, {
+        method: presigned.method || 'POST',
+        body: newMaterialFile,
+        headers: {
+          'Content-Type': newMaterialFile.type || 'application/octet-stream'
+        }
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Tải tệp lên thất bại.');
+      }
+
+      const downloadUrl = presigned.downloadUrl.startsWith('http') ? presigned.downloadUrl : `${API}${presigned.downloadUrl}`;
+
+      await api(`/api/classes/${selectedClass.id}/materials`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: newMaterialTitle,
+          description: newMaterialDescription,
+          categoryId: newMaterialCategoryId,
+          fileName: newMaterialFile.name,
+          fileKey: presigned.fileKey,
+          fileUrl: downloadUrl,
+          mimeType: newMaterialFile.type || 'application/octet-stream',
+          fileSizeBytes: newMaterialFile.size
+        })
+      });
+
+      setShowMaterialModal(false);
+      setNewMaterialTitle('');
+      setNewMaterialDescription('');
+      setNewMaterialCategoryId(null);
+      setNewMaterialFile(null);
+      setIsUploadingMaterial(false);
+      await refreshMaterials(selectedClass.id, materialCategoryFilter);
+      setMessage('Đăng tài liệu thành công!');
+    } catch (err) {
+      setMessage((err as Error).message);
+    } finally {
+      setIsUploadingMaterial(false);
+    }
+  }
+
+  async function handleDeleteMaterial(materialId: number) {
+    if (!selectedClass || !confirm('Bạn có chắc muốn xóa tài liệu này?')) return;
+    try {
+      await api(`/api/materials/${materialId}`, { method: 'DELETE' });
+      await refreshMaterials(selectedClass.id, materialCategoryFilter);
+      setMessage('Đã xóa tài liệu thành công.');
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
+  async function handleOpenMaterial(materialId: number) {
+    try {
+      const res = await api(`/api/materials/${materialId}/download`);
+      const finalUrl = res.downloadUrl.startsWith('http') ? res.downloadUrl : `${API}${res.downloadUrl}`;
+      window.open(finalUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setMessage((err as Error).message);
+    }
+  }
+
   // -------------------------------------------------------------
   // LOGIN / REGISTER VIEW
   // -------------------------------------------------------------
@@ -618,6 +794,9 @@ export default function App() {
           <button className={page === 'assignments' ? 'active' : ''} onClick={() => setPage('assignments')}>
             <ClipboardList size={18} /> Bài tập
           </button>
+          <button className={page === 'materials' ? 'active' : ''} onClick={() => setPage('materials')}>
+            <FolderOpen size={18} /> Tài liệu
+          </button>
           <button className={page === 'announcements' ? 'active' : ''} onClick={() => setPage('announcements')}>
             <Megaphone size={18} /> Thông báo
           </button>
@@ -650,6 +829,7 @@ export default function App() {
               {page === 'home' && 'Bảng điều khiển Tổng quan'}
               {page === 'classes' && (selectedClass ? selectedClass.name : 'Danh sách Lớp học')}
               {page === 'assignments' && 'Quản lý Bài tập & Nộp bài'}
+              {page === 'materials' && (selectedClass ? selectedClass.name : 'Tài liệu học tập')}
               {page === 'announcements' && 'Thông báo lớp học'}
               {page === 'users' && 'Quản trị Danh sách Người dùng'}
               {page === 'departments' && 'Danh mục Khoa / Đơn vị đào tạo'}
@@ -1029,6 +1209,112 @@ export default function App() {
         )}
 
         {/* ======================================================== */}
+        {/* PAGE: MATERIALS (TÀI LIỆU HỌC TẬP) */}
+        {/* ======================================================== */}
+        {page === 'materials' && (
+          <div className="page-body">
+            {!selectedClass ? (
+              <div className="select-class-guide">
+                <BookOpen size={48} />
+                <h3>Vui lòng chọn lớp học để xem tài liệu</h3>
+                <ClassGrid items={classes} onSelect={selectClass} />
+              </div>
+            ) : (
+              <div>
+                <div className="action-toolbar">
+                  <div>
+                    <span className="badge">{selectedClass.name}</span>
+                    <h3>Thư viện tài liệu học tập ({materials.length})</h3>
+                  </div>
+                  {user.role === 'Lecturer' && (
+                    <div className="toolbar-actions">
+                      <button className="btn-secondary" onClick={() => setShowCategoryModal(true)}>
+                        <Plus size={16} /> Chương mục mới
+                      </button>
+                      <button className="btn-primary" onClick={() => setShowMaterialModal(true)}>
+                        <Plus size={16} /> Đăng tài liệu
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="materials-layout">
+                  <aside className="material-sidebar panel-box">
+                    <div className="panel-header"><h3>Chương mục</h3></div>
+                    <button
+                      className={`material-filter ${materialCategoryFilter === 'all' ? 'active' : ''}`}
+                      onClick={() => {
+                        setMaterialCategoryFilter('all');
+                        if (selectedClass) {
+                          void refreshMaterials(selectedClass.id, 'all');
+                        }
+                      }}
+                    >
+                      Tất cả tài liệu
+                    </button>
+
+                    {categories.map(category => (
+                      <button
+                        key={category.id}
+                        className={`material-filter ${materialCategoryFilter === category.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setMaterialCategoryFilter(category.id);
+                          if (selectedClass) {
+                            void refreshMaterials(selectedClass.id, category.id);
+                          }
+                        }}
+                      >
+                        <span>{category.name}</span>
+                        <small>{category.materialCount ?? 0}</small>
+                      </button>
+                    ))}
+                    {categories.length === 0 && <p className="empty-hint">Chưa có chương mục nào.</p>}
+                  </aside>
+
+                  <div className="material-content">
+                    <div className="material-grid">
+                      {materials.map(material => (
+                        <article className="material-card" key={material.id}>
+                          <div className="material-card-header">
+                            <span className="material-category-badge">{material.categoryName || 'Chung'}</span>
+                            {user.role === 'Lecturer' && (
+                              <button className="btn-icon danger" onClick={() => handleDeleteMaterial(material.id)} title="Xóa tài liệu">
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                          <h4>{material.title}</h4>
+                          <p>{material.description || 'Không có mô tả cho tài liệu này.'}</p>
+                          <div className="material-meta">
+                            <span>{material.fileName}</span>
+                            <span>{formatFileSize(material.fileSizeBytes)}</span>
+                          </div>
+                          <div className="material-foot">
+                            <small>Đăng bởi: {material.author?.fullName || 'Hệ thống'}</small>
+                            <small>{material.createdAt ? new Date(material.createdAt).toLocaleDateString('vi-VN') : ''}</small>
+                          </div>
+                          <div className="material-actions">
+                            <button className="btn-secondary" onClick={() => handleOpenMaterial(material.id)}>
+                              <FileText size={14} /> Xem / Tải
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    {materials.length === 0 && (
+                      <div className="empty-material-box">
+                        <FileText size={28} />
+                        <p>Chưa có tài liệu nào trong mục này.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================== */}
         {/* PAGE: ANNOUNCEMENTS (THÔNG BÁO) */}
         {/* ======================================================== */}
         {page === 'announcements' && (
@@ -1249,6 +1535,71 @@ export default function App() {
         </div>
       )}
 
+      {/* Modal: Add Category */}
+      {showCategoryModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Thêm chương mục mới</h3>
+              <button className="btn-close" onClick={() => setShowCategoryModal(false)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleCreateCategory}>
+              <div className="form-group">
+                <label>Tên chương / chủ đề</label>
+                <input required value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="vd: Chương 1: Tổng quan" />
+              </div>
+              <div className="form-group">
+                <label>Mô tả</label>
+                <textarea rows={3} value={newCategoryDescription} onChange={e => setNewCategoryDescription(e.target.value)} placeholder="Mô tả chương mục..." />
+              </div>
+              <div className="form-group">
+                <label>Thứ tự hiển thị</label>
+                <input type="number" min="0" value={newCategorySortOrder} onChange={e => setNewCategorySortOrder(Number(e.target.value))} />
+              </div>
+              <button type="submit" className="btn-primary full">Tạo chương mục</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add Material */}
+      {showMaterialModal && (
+        <div className="modal-overlay">
+          <div className="modal-content material-modal-content">
+            <div className="modal-header">
+              <h3>Đăng tài liệu mới</h3>
+              <button className="btn-close" onClick={() => setShowMaterialModal(false)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleCreateMaterial}>
+              <div className="form-group">
+                <label>Tiêu đề</label>
+                <input required value={newMaterialTitle} onChange={e => setNewMaterialTitle(e.target.value)} placeholder="vd: Slide bài giảng tuần 1" />
+              </div>
+              <div className="form-group">
+                <label>Chương mục</label>
+                <select value={newMaterialCategoryId ?? ''} onChange={e => setNewMaterialCategoryId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">Không phân loại</option>
+                  {categories.map(category => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Mô tả</label>
+                <textarea rows={3} value={newMaterialDescription} onChange={e => setNewMaterialDescription(e.target.value)} placeholder="Mô tả tài liệu..." />
+              </div>
+              <div className="form-group">
+                <label>Chọn tệp tài liệu</label>
+                <input type="file" onChange={e => setNewMaterialFile(e.target.files?.[0] ?? null)} />
+              </div>
+              <button type="submit" className="btn-primary full" disabled={isUploadingMaterial}>
+                {isUploadingMaterial ? 'Đang tải lên...' : 'Đăng tài liệu'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Change Password */}
       {showPasswordModal && (
         <div className="modal-overlay">
@@ -1297,4 +1648,12 @@ function ClassGrid({ items, onSelect }: { items: ClassItem[]; onSelect: (c: Clas
       ))}
     </div>
   );
+}
+
+function formatFileSize(bytes: number) {
+  if (!bytes) return '0 KB';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unitIndex;
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
 }

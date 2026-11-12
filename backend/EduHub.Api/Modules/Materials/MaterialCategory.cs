@@ -13,3 +13,4 @@ public class MaterialCategory : BaseEntity
     public List<Material> Materials { get; set; } = [];
 }
 
+ 
