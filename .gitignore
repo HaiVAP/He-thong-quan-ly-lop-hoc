@@ -1,0 +1,57 @@
+# === OS Files ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# === .NET / C# / Visual Studio ===
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+*.userprefs
+*.dbmdl
+*.jfm
+.vs/
+.idea/
+*.DotSettings.user
+_ReSharper*/
+*.patch
+*.diff
+
+# .NET Publish & Package
+*.nupkg
+*.snupkg
+publish/
+[Pp]ackages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# === Node / Frontend ===
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# === Secrets & Environment Files ===
+.env
+.env.local
+.env.production
+*.key
+*.pem
+*.pfx
+
+# === Docker ===
+eduhub_pgdata/
+

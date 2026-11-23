@@ -1,0 +1,3 @@
+using EduHub.Api.Modules.Identity;
+namespace EduHub.Api.Modules.Academics;
+public class ClassRoom{public int Id{get;set;}public int LecturerId{get;set;}public User Lecturer{get;set;}=null!;public int DepartmentId{get;set;}public Department Department{get;set;}=null!;public string Name{get;set;}="";public string? Description{get;set;}public string JoinCode{get;set;}="";public string Status{get;set;}="Active";public DateTime CreatedAt{get;set;}=DateTime.UtcNow;public List<ClassMember> Members{get;set;}=[];}
