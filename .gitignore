@@ -52,6 +52,9 @@ frontend/.pnpm-debug.log*
 *.pem
 *.pfx
 
+# === Uploads & User Content ===
+uploads/
+
 # === Docker ===
 eduhub_pgdata/
 

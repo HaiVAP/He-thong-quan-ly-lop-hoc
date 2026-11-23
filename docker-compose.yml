@@ -15,6 +15,7 @@ services:
   api:
     build: ./backend
     environment:
+      ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=eduhub;Username=eduhub;Password=eduhub_dev_password
       Jwt__Secret: CHANGE_THIS_DEVELOPMENT_SECRET_TO_A_LONG_RANDOM_VALUE_123456
