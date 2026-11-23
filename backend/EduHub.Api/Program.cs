@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
-using EduHub.Api.Common.Middlewares;
+using EduHub.Shared.Middlewares;
 using EduHub.Api.Infrastructure;
 using EduHub.Api.Modules.Identity;
 using EduHub.Api.Modules.Storage;

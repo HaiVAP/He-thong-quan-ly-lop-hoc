@@ -13,4 +13,15 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\EduHub.Shared\EduHub.Shared.csproj" />
+    <ProjectReference Include="..\src\EduHub.Contracts\EduHub.Contracts.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Identity\EduHub.Identity.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Academics\EduHub.Academics.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Assignments\EduHub.Assignments.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Communication\EduHub.Communication.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Materials\EduHub.Materials.csproj" />
+    <ProjectReference Include="..\src\Modules\EduHub.Statistics\EduHub.Statistics.csproj" />
+  </ItemGroup>
 </Project>

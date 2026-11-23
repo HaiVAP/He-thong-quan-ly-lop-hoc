@@ -1,5 +1,5 @@
-using EduHub.Api.Common.Exceptions;
-using EduHub.Api.Common.Models;
+using EduHub.Shared.Exceptions;
+using EduHub.Shared.Models;
 using EduHub.Api.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

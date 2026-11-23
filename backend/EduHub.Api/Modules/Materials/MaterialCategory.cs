@@ -1,4 +1,4 @@
-using EduHub.Api.Common.Models;
+using EduHub.Shared.Models;
 using EduHub.Api.Modules.Academics;
 
 namespace EduHub.Api.Modules.Materials;

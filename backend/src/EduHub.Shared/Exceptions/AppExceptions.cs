@@ -1,4 +1,4 @@
-namespace EduHub.Api.Common.Exceptions;
+namespace EduHub.Shared.Exceptions;
 
 public class AppException : Exception
 {

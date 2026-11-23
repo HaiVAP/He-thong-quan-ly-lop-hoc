@@ -1,9 +1,11 @@
 using System.Net;
 using System.Text.Json;
-using EduHub.Api.Common.Exceptions;
-using EduHub.Api.Common.Models;
+using EduHub.Shared.Exceptions;
+using EduHub.Shared.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
-namespace EduHub.Api.Common.Middlewares;
+namespace EduHub.Shared.Middlewares;
 
 public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
 {

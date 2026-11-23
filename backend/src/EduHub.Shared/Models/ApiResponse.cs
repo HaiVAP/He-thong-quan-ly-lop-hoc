@@ -1,4 +1,4 @@
-namespace EduHub.Api.Common.Models;
+namespace EduHub.Shared.Models;
 
 public class ApiResponse<T>
 {

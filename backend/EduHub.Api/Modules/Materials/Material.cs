@@ -1,4 +1,4 @@
-using EduHub.Api.Common.Models;
+using EduHub.Shared.Models;
 using EduHub.Api.Modules.Academics;
 using EduHub.Api.Modules.Identity;
 
