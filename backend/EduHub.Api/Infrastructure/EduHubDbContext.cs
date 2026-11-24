@@ -1,7 +1,7 @@
 using EduHub.Identity.Domain;
 using EduHub.Academics.Domain;
 using EduHub.Assignments.Domain;
-using EduHub.Api.Modules.Communication;
+using EduHub.Communication.Domain;
 using EduHub.Api.Modules.Materials;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,16 +39,14 @@ public class EduHubDbContext(DbContextOptions<EduHubDbContext> options) : DbCont
         m.Entity<Submission>().ToTable("Submissions", "assignments");
         m.Entity<Submission>().HasIndex(x => new { x.AssignmentId, x.StudentId, x.AttemptNumber }).IsUnique();
 
+        m.Entity<Announcement>().ToTable("Announcements", "communication");
+
         // Academics internal relationships
         m.Entity<ClassRoom>().HasOne(x => x.Department).WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
         m.Entity<ClassMember>().HasOne(x => x.ClassRoom).WithMany(x => x.Members).HasForeignKey(x => x.ClassRoomId).OnDelete(DeleteBehavior.Cascade);
 
         // Assignments internal relationships
         m.Entity<Submission>().HasOne(x => x.Assignment).WithMany(x => x.Submissions).HasForeignKey(x => x.AssignmentId).OnDelete(DeleteBehavior.Cascade);
-
-        // Communication relationships
-        m.Entity<Announcement>().HasOne(x => x.ClassRoom).WithMany().HasForeignKey(x => x.ClassRoomId).OnDelete(DeleteBehavior.Cascade);
-        m.Entity<Announcement>().HasOne(x => x.Author).WithMany().HasForeignKey(x => x.AuthorId).OnDelete(DeleteBehavior.Restrict);
 
         // Materials relationships (Sprint 2 / Module 2)
         m.Entity<MaterialCategory>().HasOne(x => x.ClassRoom).WithMany().HasForeignKey(x => x.ClassRoomId).OnDelete(DeleteBehavior.Cascade);

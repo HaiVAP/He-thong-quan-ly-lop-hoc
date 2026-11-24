@@ -8,6 +8,8 @@ using EduHub.Academics;
 using EduHub.Academics.Infrastructure;
 using EduHub.Assignments;
 using EduHub.Assignments.Infrastructure;
+using EduHub.Communication;
+using EduHub.Communication.Infrastructure;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +28,7 @@ builder.Services.AddControllers()
     .AddApplicationPart(typeof(IdentityModuleExtensions).Assembly)
     .AddApplicationPart(typeof(AcademicsModuleExtensions).Assembly)
     .AddApplicationPart(typeof(AssignmentsModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(CommunicationModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -98,9 +101,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
 builder.Services.AddIdentityModule(cfg);
 builder.Services.AddAcademicsModule(cfg);
 builder.Services.AddAssignmentsModule(cfg);
+builder.Services.AddCommunicationModule(cfg);
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -185,6 +190,7 @@ using (var scope = app.Services.CreateScope())
     var identityDb = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
     var academicsDb = scope.ServiceProvider.GetRequiredService<AcademicsDbContext>();
     var assignmentsDb = scope.ServiceProvider.GetRequiredService<AssignmentsDbContext>();
+    var communicationDb = scope.ServiceProvider.GetRequiredService<CommunicationDbContext>();
     var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
 
     for (int i = 1; i <= 5; i++)
@@ -194,8 +200,9 @@ using (var scope = app.Services.CreateScope())
             await EnsureContextTablesAsync(identityDb, "identity");
             await EnsureContextTablesAsync(academicsDb, "academics");
             await EnsureContextTablesAsync(assignmentsDb, "assignments");
+            await EnsureContextTablesAsync(communicationDb, "communication");
             await EnsureContextTablesAsync(db);
-            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, db);
+            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, communicationDb, db);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;
         }
