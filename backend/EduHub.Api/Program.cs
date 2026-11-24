@@ -2,7 +2,8 @@ using System.Text;
 using System.Text.Json.Serialization;
 using EduHub.Shared.Middlewares;
 using EduHub.Api.Infrastructure;
-using EduHub.Api.Modules.Identity;
+using EduHub.Identity;
+using EduHub.Identity.Infrastructure;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ var cfg = builder.Configuration;
 // 1. Controllers & JSON Options
 // ==========================================
 builder.Services.AddControllers()
+    .AddApplicationPart(typeof(IdentityModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -88,7 +90,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddIdentityModule(cfg);
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -145,14 +147,16 @@ app.MapGet("/", () => Results.Ok(new
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var identityDb = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
     var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
 
     for (int i = 1; i <= 5; i++)
     {
         try
         {
+            await identityDb.Database.EnsureCreatedAsync();
             await db.Database.EnsureCreatedAsync();
-            await DemoSeeder.SeedAsync(db);
+            await DemoSeeder.SeedAsync(identityDb, db);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;
         }

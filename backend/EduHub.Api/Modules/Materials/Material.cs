@@ -1,6 +1,6 @@
 using EduHub.Shared.Models;
 using EduHub.Api.Modules.Academics;
-using EduHub.Api.Modules.Identity;
+using EduHub.Identity.Domain;
 
 namespace EduHub.Api.Modules.Materials;
 

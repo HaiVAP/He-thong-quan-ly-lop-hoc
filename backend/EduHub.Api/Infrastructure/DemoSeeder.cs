@@ -1,6 +1,8 @@
 using EduHub.Api.Infrastructure;
 using EduHub.Api.Modules.Academics;
-using EduHub.Api.Modules.Identity;
+using EduHub.Identity.Domain;
+using EduHub.Identity.Application.Common;
+using EduHub.Identity.Infrastructure;
 using EduHub.Api.Modules.Materials;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +10,9 @@ namespace EduHub.Api.Infrastructure;
 
 public static class DemoSeeder
 {
-    public static async Task SeedAsync(EduHubDbContext db)
+    public static async Task SeedAsync(IdentityDbContext identityDb, EduHubDbContext db)
     {
-        if (await db.Users.AnyAsync()) return;
+        if (await identityDb.Users.AnyAsync()) return;
 
         // 1. Seed Users (Admin, Lecturers, Students)
         var admin = new User
@@ -72,8 +74,8 @@ public static class DemoSeeder
             Phone = "0934567890"
         };
 
-        db.Users.AddRange(admin, lecturer1, lecturer2, student1, student2, student3);
-        await db.SaveChangesAsync();
+        identityDb.Users.AddRange(admin, lecturer1, lecturer2, student1, student2, student3);
+        await identityDb.SaveChangesAsync();
 
         // 2. Seed Departments
         var deptCntt = new Department

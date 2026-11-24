@@ -1,4 +1,4 @@
-using EduHub.Api.Modules.Identity;
+using EduHub.Identity.Domain;
 using EduHub.Api.Modules.Academics;
 using EduHub.Api.Modules.Assignments;
 using EduHub.Api.Modules.Communication;
@@ -23,6 +23,7 @@ public class EduHubDbContext(DbContextOptions<EduHubDbContext> options) : DbCont
     {
         base.OnModelCreating(m);
 
+        m.Entity<User>().ToTable("Users", "identity");
         m.Entity<User>().HasIndex(x => x.Email).IsUnique();
         m.Entity<Department>().HasIndex(x => x.Code).IsUnique();
         m.Entity<ClassRoom>().HasIndex(x => x.JoinCode).IsUnique();
