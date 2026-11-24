@@ -1,6 +1,8 @@
 using EduHub.Api.Infrastructure;
 using EduHub.Academics.Domain;
 using EduHub.Academics.Infrastructure;
+using EduHub.Assignments.Domain;
+using EduHub.Assignments.Infrastructure;
 using EduHub.Identity.Domain;
 using EduHub.Identity.Application.Common;
 using EduHub.Identity.Infrastructure;
@@ -11,7 +13,7 @@ namespace EduHub.Api.Infrastructure;
 
 public static class DemoSeeder
 {
-    public static async Task SeedAsync(IdentityDbContext identityDb, AcademicsDbContext academicsDb, EduHubDbContext db)
+    public static async Task SeedAsync(IdentityDbContext identityDb, AcademicsDbContext academicsDb, AssignmentsDbContext assignmentsDb, EduHubDbContext db)
     {
         if (await identityDb.Users.AnyAsync()) return;
 
@@ -146,7 +148,49 @@ public static class DemoSeeder
         );
         await academicsDb.SaveChangesAsync();
 
-        // 5. Seed Material Categories & Materials (Sprint 2 / Module 2)
+        // 5. Seed Assignments & Submissions
+        var assign1 = new Assignment
+        {
+            ClassRoomId = class1.Id,
+            CreatedById = lecturer1.Id,
+            Title = "Bài tập 01: Thiết kế Database & RESTful API",
+            Description = "Yêu cầu xây dựng CRUD API và cấu hình JWT Authentication",
+            Deadline = DateTime.UtcNow.AddDays(7),
+            AllowResubmit = true,
+            MaxAttempts = 3,
+            Status = "Published"
+        };
+        var assign2 = new Assignment
+        {
+            ClassRoomId = class1.Id,
+            CreatedById = lecturer1.Id,
+            Title = "Bài tập 02: Tách Module theo Modular Monolith",
+            Description = "Phân chia Domain, Application và DbContext cho từng phân hệ",
+            Deadline = DateTime.UtcNow.AddDays(14),
+            AllowResubmit = true,
+            MaxAttempts = 2,
+            Status = "Published"
+        };
+        assignmentsDb.Assignments.AddRange(assign1, assign2);
+        await assignmentsDb.SaveChangesAsync();
+
+        var sub1 = new Submission
+        {
+            AssignmentId = assign1.Id,
+            StudentId = student1.Id,
+            AttemptNumber = 1,
+            Content = "Em nộp bài tập 01 qua link github repo và tài liệu báo cáo đính kèm.",
+            FileUrl = null,
+            SubmittedAt = DateTime.UtcNow.AddDays(-1),
+            Score = 9.5m,
+            Feedback = "Bài làm rất tốt, cấu trúc code sạch.",
+            GraderId = lecturer1.Id,
+            GradedAt = DateTime.UtcNow
+        };
+        assignmentsDb.Submissions.Add(sub1);
+        await assignmentsDb.SaveChangesAsync();
+
+        // 6. Seed Material Categories & Materials (Sprint 2 / Module 2)
         var cat1 = new MaterialCategory
         {
             ClassRoomId = class1.Id,
