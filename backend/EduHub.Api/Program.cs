@@ -4,9 +4,13 @@ using EduHub.Shared.Middlewares;
 using EduHub.Api.Infrastructure;
 using EduHub.Identity;
 using EduHub.Identity.Infrastructure;
+using EduHub.Academics;
+using EduHub.Academics.Infrastructure;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -18,6 +22,7 @@ var cfg = builder.Configuration;
 // ==========================================
 builder.Services.AddControllers()
     .AddApplicationPart(typeof(IdentityModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(AcademicsModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -91,6 +96,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddIdentityModule(cfg);
+builder.Services.AddAcademicsModule(cfg);
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -144,19 +150,46 @@ app.MapGet("/", () => Results.Ok(new
 }));
 
 // Auto migrate / seed database in development với cơ chế thử lại (Retry)
+static async Task EnsureContextTablesAsync(DbContext context, string? schema = null)
+{
+    if (!string.IsNullOrEmpty(schema))
+    {
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync($"CREATE SCHEMA IF NOT EXISTS \"{schema}\";");
+        }
+        catch { }
+    }
+
+    try
+    {
+        await context.Database.EnsureCreatedAsync();
+    }
+    catch { }
+
+    try
+    {
+        var creator = (IRelationalDatabaseCreator)context.Database.GetService<IDatabaseCreator>();
+        await creator.CreateTablesAsync();
+    }
+    catch { }
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var identityDb = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+    var academicsDb = scope.ServiceProvider.GetRequiredService<AcademicsDbContext>();
     var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
 
     for (int i = 1; i <= 5; i++)
     {
         try
         {
-            await identityDb.Database.EnsureCreatedAsync();
-            await db.Database.EnsureCreatedAsync();
-            await DemoSeeder.SeedAsync(identityDb, db);
+            await EnsureContextTablesAsync(identityDb, "identity");
+            await EnsureContextTablesAsync(academicsDb, "academics");
+            await EnsureContextTablesAsync(db);
+            await DemoSeeder.SeedAsync(identityDb, academicsDb, db);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;
         }

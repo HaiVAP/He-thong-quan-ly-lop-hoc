@@ -1,39 +1,22 @@
+using EduHub.Academics.Application.DTOs;
+using EduHub.Academics.Domain;
+using EduHub.Academics.Infrastructure;
 using EduHub.Shared.Exceptions;
-using EduHub.Shared.Models;
-using EduHub.Api.Infrastructure;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace EduHub.Api.Modules.Academics;
+namespace EduHub.Academics.Application.Services;
 
-[ApiController]
-[Route("api/departments")]
-[Authorize]
-public class DepartmentsController(EduHubDbContext db) : ControllerBase
+public class DepartmentService(AcademicsDbContext db) : IDepartmentService
 {
-    public record CreateDepartmentRequest(string Name, string Code, string? Description);
-    public record UpdateDepartmentRequest(string Name, string Code, string? Description);
-
-    /// <summary>
-    /// FR-06: Xem danh sách các khoa
-    /// </summary>
-    [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<List<Department>> GetAllAsync()
     {
-        var departments = await db.Departments
+        return await db.Departments
             .AsNoTracking()
             .OrderBy(x => x.Name)
             .ToListAsync();
-
-        return Ok(ApiResponse.Ok(departments));
     }
 
-    /// <summary>
-    /// FR-06: Xem thông tin chi tiết một khoa
-    /// </summary>
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<Department> GetByIdAsync(int id)
     {
         var department = await db.Departments
             .AsNoTracking()
@@ -42,15 +25,10 @@ public class DepartmentsController(EduHubDbContext db) : ControllerBase
         if (department is null)
             throw new NotFoundException($"Không tìm thấy khoa có ID {id}.");
 
-        return Ok(ApiResponse.Ok(department));
+        return department;
     }
 
-    /// <summary>
-    /// FR-05: Admin thêm mới khoa
-    /// </summary>
-    [HttpPost]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Create([FromBody] CreateDepartmentRequest request)
+    public async Task<Department> CreateAsync(CreateDepartmentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Code))
             throw new BadRequestException("Tên khoa và Mã khoa không được để trống.");
@@ -69,15 +47,10 @@ public class DepartmentsController(EduHubDbContext db) : ControllerBase
         db.Departments.Add(department);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = department.Id }, ApiResponse.Ok(department, "Thêm khoa mới thành công."));
+        return department;
     }
 
-    /// <summary>
-    /// FR-05: Admin cập nhật thông tin khoa
-    /// </summary>
-    [HttpPut("{id:int}")]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateDepartmentRequest request)
+    public async Task<Department> UpdateAsync(int id, UpdateDepartmentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Code))
             throw new BadRequestException("Tên khoa và Mã khoa không được để trống.");
@@ -96,15 +69,10 @@ public class DepartmentsController(EduHubDbContext db) : ControllerBase
 
         await db.SaveChangesAsync();
 
-        return Ok(ApiResponse.Ok(department, "Cập nhật thông tin khoa thành công."));
+        return department;
     }
 
-    /// <summary>
-    /// FR-05: Admin xóa khoa
-    /// </summary>
-    [HttpDelete("{id:int}")]
-    [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task DeleteAsync(int id)
     {
         var department = await db.Departments.FindAsync(id);
         if (department is null)
@@ -116,7 +84,6 @@ public class DepartmentsController(EduHubDbContext db) : ControllerBase
 
         db.Departments.Remove(department);
         await db.SaveChangesAsync();
-
-        return Ok(ApiResponse.Ok("Đã xóa khoa thành công."));
     }
 }
+

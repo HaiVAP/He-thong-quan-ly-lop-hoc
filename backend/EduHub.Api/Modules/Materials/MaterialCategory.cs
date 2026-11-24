@@ -1,5 +1,5 @@
 using EduHub.Shared.Models;
-using EduHub.Api.Modules.Academics;
+using EduHub.Academics.Domain;
 
 namespace EduHub.Api.Modules.Materials;
 

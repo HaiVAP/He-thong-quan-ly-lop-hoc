@@ -1,5 +1,6 @@
 using EduHub.Api.Infrastructure;
-using EduHub.Api.Modules.Academics;
+using EduHub.Academics.Domain;
+using EduHub.Academics.Infrastructure;
 using EduHub.Identity.Domain;
 using EduHub.Identity.Application.Common;
 using EduHub.Identity.Infrastructure;
@@ -10,7 +11,7 @@ namespace EduHub.Api.Infrastructure;
 
 public static class DemoSeeder
 {
-    public static async Task SeedAsync(IdentityDbContext identityDb, EduHubDbContext db)
+    public static async Task SeedAsync(IdentityDbContext identityDb, AcademicsDbContext academicsDb, EduHubDbContext db)
     {
         if (await identityDb.Users.AnyAsync()) return;
 
@@ -99,8 +100,8 @@ public static class DemoSeeder
             Description = "Khoa Kỹ thuật phần mềm & Hệ thống thông tin"
         };
 
-        db.Departments.AddRange(deptCntt, deptKhmt, deptKtpm);
-        await db.SaveChangesAsync();
+        academicsDb.Departments.AddRange(deptCntt, deptKhmt, deptKtpm);
+        await academicsDb.SaveChangesAsync();
 
         // 3. Seed Classes
         var class1 = new ClassRoom
@@ -133,17 +134,17 @@ public static class DemoSeeder
             Status = "Active"
         };
 
-        db.Classes.AddRange(class1, class2, class3);
-        await db.SaveChangesAsync();
+        academicsDb.Classes.AddRange(class1, class2, class3);
+        await academicsDb.SaveChangesAsync();
 
         // 4. Seed Class Members (Enrollments)
-        db.ClassMembers.AddRange(
+        academicsDb.ClassMembers.AddRange(
             new ClassMember { ClassRoomId = class1.Id, StudentId = student1.Id, Status = "Active" },
             new ClassMember { ClassRoomId = class1.Id, StudentId = student2.Id, Status = "Active" },
             new ClassMember { ClassRoomId = class1.Id, StudentId = student3.Id, Status = "Active" },
             new ClassMember { ClassRoomId = class2.Id, StudentId = student1.Id, Status = "Active" }
         );
-        await db.SaveChangesAsync();
+        await academicsDb.SaveChangesAsync();
 
         // 5. Seed Material Categories & Materials (Sprint 2 / Module 2)
         var cat1 = new MaterialCategory

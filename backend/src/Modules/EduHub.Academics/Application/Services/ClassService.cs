@@ -1,44 +1,26 @@
-using System.Security.Claims;
 using System.Security.Cryptography;
+using EduHub.Academics.Application.DTOs;
+using EduHub.Academics.Domain;
+using EduHub.Academics.Infrastructure;
+using EduHub.Contracts;
 using EduHub.Shared.Exceptions;
-using EduHub.Shared.Models;
-using EduHub.Api.Infrastructure;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace EduHub.Api.Modules.Academics;
+namespace EduHub.Academics.Application.Services;
 
-[ApiController]
-[Route("api/classes")]
-[Authorize]
-public class ClassesController(EduHubDbContext db) : ControllerBase
+public class ClassService(AcademicsDbContext db, IUserDirectory userDirectory) : IClassService
 {
-    private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    private bool IsAdmin => User.IsInRole("Admin");
-    private bool IsLecturer => User.IsInRole("Lecturer");
-    private bool IsStudent => User.IsInRole("Student");
-
-    public record CreateClassRequest(string Name, string? Description, int DepartmentId);
-    public record UpdateClassRequest(string Name, string? Description, int DepartmentId, string? Status);
-    public record JoinClassRequest(string JoinCode);
-
     private static string GenerateJoinCode() =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToUpperInvariant();
 
-    /// <summary>
-    /// FR-14 & FR-08: Lấy danh sách lớp học của người dùng hiện tại
-    /// (Giảng viên: lớp do mình phụ trách; Sinh viên: lớp đã tham gia; Admin: toàn bộ lớp)
-    /// </summary>
-    [HttpGet("mine")]
-    public async Task<IActionResult> GetMyClasses()
+    public async Task<object> GetMyClassesAsync(int currentUserId, bool isLecturer, bool isStudent, bool isAdmin)
     {
-        if (IsLecturer)
+        if (isLecturer)
         {
             var classes = await db.Classes
                 .AsNoTracking()
                 .Include(x => x.Department)
-                .Where(x => x.LecturerId == CurrentUserId)
+                .Where(x => x.LecturerId == currentUserId)
                 .OrderByDescending(x => x.CreatedAt)
                 .Select(c => new
                 {
@@ -53,18 +35,25 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
                 })
                 .ToListAsync();
 
-            return Ok(ApiResponse.Ok(classes));
+            return classes;
         }
 
-        if (IsStudent)
+        if (isStudent)
         {
-            var classes = await db.ClassMembers
+            var memberships = await db.ClassMembers
                 .AsNoTracking()
                 .Include(x => x.ClassRoom).ThenInclude(x => x.Department)
-                .Include(x => x.ClassRoom).ThenInclude(x => x.Lecturer)
-                .Where(x => x.StudentId == CurrentUserId && x.Status == "Active")
+                .Where(x => x.StudentId == currentUserId && x.Status == "Active")
                 .OrderByDescending(x => x.JoinedAt)
-                .Select(m => new
+                .ToListAsync();
+
+            var lecturerIds = memberships.Select(m => m.ClassRoom.LecturerId).Distinct().ToList();
+            var lecturerMap = await userDirectory.GetByIdsAsync(lecturerIds);
+
+            var studentClasses = memberships.Select(m =>
+            {
+                lecturerMap.TryGetValue(m.ClassRoom.LecturerId, out var lecturer);
+                return new
                 {
                     m.ClassRoom.Id,
                     m.ClassRoom.Name,
@@ -72,19 +61,28 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
                     m.ClassRoom.JoinCode,
                     m.ClassRoom.Status,
                     m.JoinedAt,
-                    Lecturer = new { m.ClassRoom.Lecturer.Id, m.ClassRoom.Lecturer.FullName, m.ClassRoom.Lecturer.Email },
-                    Department = new { m.ClassRoom.Department.Id, m.ClassRoom.Department.Name, m.ClassRoom.Department.Code }
-                })
-                .ToListAsync();
+                    Lecturer = new
+                    {
+                        Id = m.ClassRoom.LecturerId,
+                        FullName = lecturer?.FullName ?? "Giảng viên",
+                        Email = lecturer?.Email ?? ""
+                    },
+                    Department = new
+                    {
+                        m.ClassRoom.Department.Id,
+                        m.ClassRoom.Department.Name,
+                        m.ClassRoom.Department.Code
+                    }
+                };
+            }).ToList();
 
-            return Ok(ApiResponse.Ok(classes));
+            return studentClasses;
         }
 
         // Admin: lấy toàn bộ lớp học
         var allClasses = await db.Classes
             .AsNoTracking()
             .Include(x => x.Department)
-            .Include(x => x.Lecturer)
             .OrderByDescending(x => x.CreatedAt)
             .Select(c => new
             {
@@ -94,62 +92,83 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
                 c.JoinCode,
                 c.Status,
                 c.CreatedAt,
-                Lecturer = new { c.Lecturer.Id, c.Lecturer.FullName, c.Lecturer.Email },
+                c.LecturerId,
                 Department = new { c.Department.Id, c.Department.Name, c.Department.Code },
                 MemberCount = c.Members.Count(m => m.Status == "Active")
             })
             .ToListAsync();
 
-        return Ok(ApiResponse.Ok(allClasses));
+        var adminLecturerIds = allClasses.Select(c => c.LecturerId).Distinct().ToList();
+        var adminLecturerMap = await userDirectory.GetByIdsAsync(adminLecturerIds);
+
+        var result = allClasses.Select(c =>
+        {
+            adminLecturerMap.TryGetValue(c.LecturerId, out var lecturer);
+            return new
+            {
+                c.Id,
+                c.Name,
+                c.Description,
+                c.JoinCode,
+                c.Status,
+                c.CreatedAt,
+                Lecturer = new
+                {
+                    Id = c.LecturerId,
+                    FullName = lecturer?.FullName ?? "Giảng viên",
+                    Email = lecturer?.Email ?? ""
+                },
+                c.Department,
+                c.MemberCount
+            };
+        }).ToList();
+
+        return result;
     }
 
-    /// <summary>
-    /// FR-08: Xem thông tin chi tiết một lớp học
-    /// </summary>
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<ClassDetailDto> GetByIdAsync(int id, int currentUserId, bool isLecturer, bool isStudent, bool isAdmin)
     {
         var c = await db.Classes
             .AsNoTracking()
             .Include(x => x.Department)
-            .Include(x => x.Lecturer)
             .SingleOrDefaultAsync(x => x.Id == id);
 
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
         // Kiểm tra quyền truy cập: Giảng viên phụ trách, Admin, hoặc Sinh viên là thành viên
-        if (!IsAdmin && c.LecturerId != CurrentUserId)
+        if (!isAdmin && c.LecturerId != currentUserId)
         {
-            var isMember = await db.ClassMembers.AnyAsync(x => x.ClassRoomId == id && x.StudentId == CurrentUserId && x.Status == "Active");
+            var isMember = await db.ClassMembers.AnyAsync(x => x.ClassRoomId == id && x.StudentId == currentUserId && x.Status == "Active");
             if (!isMember)
                 throw new ForbiddenException("Bạn không có quyền truy cập lớp học này.");
         }
 
         var memberCount = await db.ClassMembers.CountAsync(x => x.ClassRoomId == id && x.Status == "Active");
-        var assignmentCount = await db.Assignments.CountAsync(x => x.ClassRoomId == id);
+        var lecturer = await userDirectory.GetByIdAsync(c.LecturerId);
 
-        return Ok(ApiResponse.Ok(new
-        {
+        var lecturerSummary = lecturer is not null
+            ? new LecturerSummary(lecturer.Id, lecturer.FullName, lecturer.Email)
+            : new LecturerSummary(c.LecturerId, "Giảng viên", "");
+
+        var departmentSummary = new DepartmentSummary(c.Department.Id, c.Department.Name, c.Department.Code);
+        var showJoinCode = (isLecturer && c.LecturerId == currentUserId) || isAdmin;
+
+        return new ClassDetailDto(
             c.Id,
             c.Name,
             c.Description,
-            JoinCode = (IsLecturer && c.LecturerId == CurrentUserId) || IsAdmin ? c.JoinCode : null,
+            showJoinCode ? c.JoinCode : null,
             c.Status,
             c.CreatedAt,
-            Lecturer = new { c.Lecturer.Id, c.Lecturer.FullName, c.Lecturer.Email },
-            Department = new { c.Department.Id, c.Department.Name, c.Department.Code },
-            MemberCount = memberCount,
-            AssignmentCount = assignmentCount
-        }));
+            lecturerSummary,
+            departmentSummary,
+            memberCount,
+            0
+        );
     }
 
-    /// <summary>
-    /// FR-07 & FR-09: Giảng viên tạo lớp học mới và hệ thống tự động sinh JoinCode
-    /// </summary>
-    [HttpPost]
-    [Authorize(Roles = "Lecturer")]
-    public async Task<IActionResult> Create([FromBody] CreateClassRequest request)
+    public async Task<ClassRoom> CreateAsync(int currentUserId, CreateClassRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             throw new BadRequestException("Tên lớp học không được để trống.");
@@ -168,7 +187,7 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
             Name = request.Name.Trim(),
             Description = request.Description?.Trim(),
             DepartmentId = request.DepartmentId,
-            LecturerId = CurrentUserId,
+            LecturerId = currentUserId,
             JoinCode = joinCode,
             Status = "Active"
         };
@@ -176,15 +195,10 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
         db.Classes.Add(classRoom);
         await db.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetById), new { id = classRoom.Id }, ApiResponse.Ok(classRoom, "Tạo lớp học thành công."));
+        return classRoom;
     }
 
-    /// <summary>
-    /// FR-08: Giảng viên cập nhật thông tin lớp học do mình tạo
-    /// </summary>
-    [HttpPut("{id:int}")]
-    [Authorize(Roles = "Lecturer,Admin")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateClassRequest request)
+    public async Task<ClassRoom> UpdateAsync(int id, int currentUserId, bool isAdmin, UpdateClassRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
             throw new BadRequestException("Tên lớp học không được để trống.");
@@ -193,7 +207,7 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
-        if (!IsAdmin && c.LecturerId != CurrentUserId)
+        if (!isAdmin && c.LecturerId != currentUserId)
             throw new ForbiddenException("Bạn chỉ có thể chỉnh sửa lớp học do chính mình tạo.");
 
         if (!await db.Departments.AnyAsync(x => x.Id == request.DepartmentId))
@@ -211,42 +225,29 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
         }
 
         await db.SaveChangesAsync();
-
-        return Ok(ApiResponse.Ok(c, "Cập nhật lớp học thành công."));
+        return c;
     }
 
-    /// <summary>
-    /// FR-08: Xóa lớp học
-    /// </summary>
-    [HttpDelete("{id:int}")]
-    [Authorize(Roles = "Lecturer,Admin")]
-    public async Task<IActionResult> Delete(int id)
+    public async Task DeleteAsync(int id, int currentUserId, bool isAdmin)
     {
         var c = await db.Classes.FindAsync(id);
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
-        if (!IsAdmin && c.LecturerId != CurrentUserId)
+        if (!isAdmin && c.LecturerId != currentUserId)
             throw new ForbiddenException("Bạn chỉ có quyền xóa lớp học do chính mình tạo.");
 
         db.Classes.Remove(c);
         await db.SaveChangesAsync();
-
-        return Ok(ApiResponse.Ok("Đã xóa lớp học thành công."));
     }
 
-    /// <summary>
-    /// FR-10: Giảng viên tạo lại mã tham gia lớp học (Regenerate JoinCode)
-    /// </summary>
-    [HttpPost("{id:int}/regenerate-code")]
-    [Authorize(Roles = "Lecturer")]
-    public async Task<IActionResult> RegenerateCode(int id)
+    public async Task<string> RegenerateCodeAsync(int id, int currentUserId)
     {
         var c = await db.Classes.FindAsync(id);
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
-        if (c.LecturerId != CurrentUserId)
+        if (c.LecturerId != currentUserId)
             throw new ForbiddenException("Bạn chỉ có thể đổi mã tham gia của lớp do mình tạo.");
 
         string newCode;
@@ -258,15 +259,10 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
         c.JoinCode = newCode;
         await db.SaveChangesAsync();
 
-        return Ok(ApiResponse.Ok(new { c.Id, c.JoinCode }, "Tạo lại mã tham gia thành công."));
+        return newCode;
     }
 
-    /// <summary>
-    /// FR-11 & FR-12: Sinh viên tham gia lớp học bằng mã lớp
-    /// </summary>
-    [HttpPost("join")]
-    [Authorize(Roles = "Student")]
-    public async Task<IActionResult> Join([FromBody] JoinClassRequest request)
+    public async Task<(int Id, string Name)> JoinAsync(int currentUserId, JoinClassRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.JoinCode))
             throw new BadRequestException("Mã tham gia không được để trống.");
@@ -278,25 +274,24 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
             throw new NotFoundException("Mã lớp không hợp lệ hoặc lớp học đã ngừng hoạt động.");
 
         var existingMember = await db.ClassMembers
-            .SingleOrDefaultAsync(x => x.ClassRoomId == c.Id && x.StudentId == CurrentUserId);
+            .SingleOrDefaultAsync(x => x.ClassRoomId == c.Id && x.StudentId == currentUserId);
 
         if (existingMember is not null)
         {
             if (existingMember.Status == "Active")
                 throw new ConflictException("Bạn đã là thành viên của lớp học này.");
 
-            // Kích hoạt lại nếu trước đó đã rời lớp
             existingMember.Status = "Active";
             existingMember.JoinedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
-            return Ok(ApiResponse.Ok(new { c.Id, c.Name }, "Tham gia lớp học thành công."));
+            return (c.Id, c.Name);
         }
 
         var member = new ClassMember
         {
             ClassRoomId = c.Id,
-            StudentId = CurrentUserId,
+            StudentId = currentUserId,
             JoinedAt = DateTime.UtcNow,
             Status = "Active"
         };
@@ -304,77 +299,65 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
         db.ClassMembers.Add(member);
         await db.SaveChangesAsync();
 
-        return Ok(ApiResponse.Ok(new { c.Id, c.Name }, "Tham gia lớp học thành công."));
+        return (c.Id, c.Name);
     }
 
-    /// <summary>
-    /// Sinh viên tự rời khỏi lớp học
-    /// </summary>
-    [HttpDelete("{id:int}/leave")]
-    [Authorize(Roles = "Student")]
-    public async Task<IActionResult> Leave(int id)
+    public async Task LeaveAsync(int id, int currentUserId)
     {
         var member = await db.ClassMembers
-            .SingleOrDefaultAsync(x => x.ClassRoomId == id && x.StudentId == CurrentUserId && x.Status == "Active");
+            .SingleOrDefaultAsync(x => x.ClassRoomId == id && x.StudentId == currentUserId && x.Status == "Active");
 
         if (member is null)
             throw new NotFoundException("Bạn không phải thành viên của lớp học này.");
 
         db.ClassMembers.Remove(member);
         await db.SaveChangesAsync();
-
-        return Ok(ApiResponse.Ok("Đã rời khỏi lớp học thành công."));
     }
 
-    /// <summary>
-    /// FR-13: Xem danh sách thành viên trong lớp học
-    /// </summary>
-    [HttpGet("{id:int}/members")]
-    public async Task<IActionResult> GetMembers(int id)
+    public async Task<List<ClassMemberDto>> GetMembersAsync(int id, int currentUserId, bool isAdmin)
     {
         var c = await db.Classes.FindAsync(id);
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
-        // Giảng viên lớp, Admin, hoặc thành viên trong lớp mới được xem danh sách
-        if (!IsAdmin && c.LecturerId != CurrentUserId &&
-            !await db.ClassMembers.AnyAsync(x => x.ClassRoomId == id && x.StudentId == CurrentUserId && x.Status == "Active"))
+        if (!isAdmin && c.LecturerId != currentUserId &&
+            !await db.ClassMembers.AnyAsync(x => x.ClassRoomId == id && x.StudentId == currentUserId && x.Status == "Active"))
         {
             throw new ForbiddenException("Bạn không có quyền xem danh sách thành viên lớp này.");
         }
 
         var members = await db.ClassMembers
             .AsNoTracking()
-            .Include(x => x.Student)
             .Where(x => x.ClassRoomId == id && x.Status == "Active")
-            .OrderBy(x => x.Student.FullName)
-            .Select(x => new
-            {
-                x.Id,
-                x.StudentId,
-                x.Student.FullName,
-                x.Student.Email,
-                x.Student.Phone,
-                x.JoinedAt,
-                x.Status
-            })
             .ToListAsync();
 
-        return Ok(ApiResponse.Ok(members));
+        var studentIds = members.Select(x => x.StudentId).Distinct().ToList();
+        var studentMap = await userDirectory.GetByIdsAsync(studentIds);
+
+        var result = members.Select(x =>
+        {
+            studentMap.TryGetValue(x.StudentId, out var student);
+            return new ClassMemberDto(
+                x.Id,
+                x.StudentId,
+                student?.FullName ?? "Sinh viên",
+                student?.Email ?? "",
+                null,
+                x.JoinedAt,
+                x.Status
+            );
+        }).OrderBy(x => x.FullName).ToList();
+
+        return result;
     }
 
-    /// <summary>
-    /// FR-13: Giảng viên hoặc Admin xóa/loại một sinh viên ra khỏi lớp học
-    /// </summary>
-    [HttpDelete("{id:int}/members/{studentId:int}")]
-    [Authorize(Roles = "Lecturer,Admin")]
-    public async Task<IActionResult> RemoveMember(int id, int studentId)
+    public async Task RemoveMemberAsync(int id, int studentId, int currentUserId, bool isAdmin)
     {
         var c = await db.Classes.FindAsync(id);
         if (c is null)
             throw new NotFoundException($"Không tìm thấy lớp học có ID {id}.");
 
-        if (!IsAdmin && c.LecturerId != CurrentUserId)
+        if (!isAdmin && c.LecturerId != currentUserId)
             throw new ForbiddenException("Bạn chỉ có quyền xóa sinh viên khỏi lớp học do mình tạo.");
 
         var member = await db.ClassMembers
@@ -385,7 +368,6 @@ public class ClassesController(EduHubDbContext db) : ControllerBase
 
         db.ClassMembers.Remove(member);
         await db.SaveChangesAsync();
-
-        return Ok(ApiResponse.Ok("Đã xóa sinh viên khỏi lớp học thành công."));
     }
 }
+
