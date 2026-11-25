@@ -1,5 +1,6 @@
 using EduHub.Communication.Application.Services;
 using EduHub.Communication.Infrastructure;
+using EduHub.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,11 +14,13 @@ public static class CommunicationModuleExtensions
         var connectionString = configuration.GetConnectionString("DefaultConnection");
 
         services.AddDbContext<CommunicationDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            options.UseNpgsql(
+                connectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "communication")));
 
         services.AddScoped<IAnnouncementService, AnnouncementService>();
+        services.AddScoped<IModuleStatistics, CommunicationStatistics>();
 
         return services;
     }
 }
-

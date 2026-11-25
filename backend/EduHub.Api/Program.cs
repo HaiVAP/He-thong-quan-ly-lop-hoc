@@ -13,11 +13,10 @@ using EduHub.Communication;
 using EduHub.Communication.Infrastructure;
 using EduHub.Materials;
 using EduHub.Materials.Infrastructure;
+using EduHub.Statistics;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -33,6 +32,7 @@ builder.Services.AddControllers()
     .AddApplicationPart(typeof(AssignmentsModuleExtensions).Assembly)
     .AddApplicationPart(typeof(CommunicationModuleExtensions).Assembly)
     .AddApplicationPart(typeof(MaterialsModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(StatisticsModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -80,12 +80,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ==========================================
-// 3. Cơ sở dữ liệu (PostgreSQL)
-// ==========================================
-builder.Services.AddDbContext<EduHubDbContext>(options =>
-    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")));
-
-// ==========================================
 // 4. Xác thực & Phân quyền (JWT Bearer)
 // ==========================================
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -111,6 +105,7 @@ builder.Services.AddAcademicsModule(cfg);
 builder.Services.AddAssignmentsModule(cfg);
 builder.Services.AddCommunicationModule(cfg);
 builder.Services.AddMaterialsModule(cfg);
+builder.Services.AddStatisticsModule();
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -163,32 +158,7 @@ app.MapGet("/", () => Results.Ok(new
     health = "/health"
 }));
 
-// Auto migrate / seed database in development với cơ chế thử lại (Retry)
-static async Task EnsureContextTablesAsync(DbContext context, string? schema = null)
-{
-    if (!string.IsNullOrEmpty(schema))
-    {
-        try
-        {
-            await context.Database.ExecuteSqlRawAsync($"CREATE SCHEMA IF NOT EXISTS \"{schema}\";");
-        }
-        catch { }
-    }
-
-    try
-    {
-        await context.Database.EnsureCreatedAsync();
-    }
-    catch { }
-
-    try
-    {
-        var creator = (IRelationalDatabaseCreator)context.Database.GetService<IDatabaseCreator>();
-        await creator.CreateTablesAsync();
-    }
-    catch { }
-}
-
+// Auto migrate / seed database with retry.
 static async Task MigrateLegacyMaterialsAsync(MaterialsDbContext context)
 {
     await context.Database.ExecuteSqlRawAsync("""
@@ -234,19 +204,17 @@ using (var scope = app.Services.CreateScope())
     var assignmentsDb = scope.ServiceProvider.GetRequiredService<AssignmentsDbContext>();
     var communicationDb = scope.ServiceProvider.GetRequiredService<CommunicationDbContext>();
     var materialsDb = scope.ServiceProvider.GetRequiredService<MaterialsDbContext>();
-    var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
 
     for (int i = 1; i <= 5; i++)
     {
         try
         {
-            await EnsureContextTablesAsync(identityDb, "identity");
-            await EnsureContextTablesAsync(academicsDb, "academics");
-            await EnsureContextTablesAsync(assignmentsDb, "assignments");
-            await EnsureContextTablesAsync(communicationDb, "communication");
-            await EnsureContextTablesAsync(materialsDb, "materials");
+            await identityDb.Database.MigrateAsync();
+            await academicsDb.Database.MigrateAsync();
+            await assignmentsDb.Database.MigrateAsync();
+            await communicationDb.Database.MigrateAsync();
+            await materialsDb.Database.MigrateAsync();
             await MigrateLegacyMaterialsAsync(materialsDb);
-            await EnsureContextTablesAsync(db);
             await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, communicationDb, materialsDb);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;

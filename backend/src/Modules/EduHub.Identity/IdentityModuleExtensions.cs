@@ -13,14 +13,16 @@ public static class IdentityModuleExtensions
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddDbContext<IdentityDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(
+                configuration.GetConnectionString("DefaultConnection"),
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "identity")));
 
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IUserDirectory, UserDirectory>();
+        services.AddScoped<IModuleStatistics, IdentityStatistics>();
         services.AddScoped<JwtTokenService>();
 
         return services;
     }
 }
-
