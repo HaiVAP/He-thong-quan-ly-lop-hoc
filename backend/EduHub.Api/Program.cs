@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using EduHub.Shared.Middlewares;
+using EduHub.Contracts;
 using EduHub.Api.Infrastructure;
 using EduHub.Identity;
 using EduHub.Identity.Infrastructure;
@@ -10,6 +11,8 @@ using EduHub.Assignments;
 using EduHub.Assignments.Infrastructure;
 using EduHub.Communication;
 using EduHub.Communication.Infrastructure;
+using EduHub.Materials;
+using EduHub.Materials.Infrastructure;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +32,7 @@ builder.Services.AddControllers()
     .AddApplicationPart(typeof(AcademicsModuleExtensions).Assembly)
     .AddApplicationPart(typeof(AssignmentsModuleExtensions).Assembly)
     .AddApplicationPart(typeof(CommunicationModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(MaterialsModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -106,6 +110,7 @@ builder.Services.AddIdentityModule(cfg);
 builder.Services.AddAcademicsModule(cfg);
 builder.Services.AddAssignmentsModule(cfg);
 builder.Services.AddCommunicationModule(cfg);
+builder.Services.AddMaterialsModule(cfg);
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -184,6 +189,43 @@ static async Task EnsureContextTablesAsync(DbContext context, string? schema = n
     catch { }
 }
 
+static async Task MigrateLegacyMaterialsAsync(MaterialsDbContext context)
+{
+    await context.Database.ExecuteSqlRawAsync("""
+        DO $$
+        BEGIN
+            IF to_regclass('public."MaterialCategories"') IS NOT NULL THEN
+                INSERT INTO materials."MaterialCategories"
+                    ("Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "Name", "Description", "SortOrder")
+                SELECT "Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "Name", "Description", "SortOrder"
+                FROM public."MaterialCategories"
+                ON CONFLICT ("Id") DO NOTHING;
+
+                PERFORM setval(
+                    pg_get_serial_sequence('materials."MaterialCategories"', 'Id'),
+                    GREATEST(COALESCE((SELECT MAX("Id") FROM materials."MaterialCategories"), 1), 1),
+                    EXISTS(SELECT 1 FROM materials."MaterialCategories"));
+            END IF;
+
+            IF to_regclass('public."Materials"') IS NOT NULL THEN
+                INSERT INTO materials."Materials"
+                    ("Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "CategoryId", "CreatedById",
+                     "Title", "Description", "FileName", "FileKey", "FileUrl", "MimeType", "FileSizeBytes")
+                SELECT "Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "CategoryId", "CreatedById",
+                       "Title", "Description", "FileName", "FileKey", "FileUrl", "MimeType", "FileSizeBytes"
+                FROM public."Materials"
+                ON CONFLICT ("Id") DO NOTHING;
+
+                PERFORM setval(
+                    pg_get_serial_sequence('materials."Materials"', 'Id'),
+                    GREATEST(COALESCE((SELECT MAX("Id") FROM materials."Materials"), 1), 1),
+                    EXISTS(SELECT 1 FROM materials."Materials"));
+            END IF;
+        END
+        $$;
+        """);
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
@@ -191,6 +233,7 @@ using (var scope = app.Services.CreateScope())
     var academicsDb = scope.ServiceProvider.GetRequiredService<AcademicsDbContext>();
     var assignmentsDb = scope.ServiceProvider.GetRequiredService<AssignmentsDbContext>();
     var communicationDb = scope.ServiceProvider.GetRequiredService<CommunicationDbContext>();
+    var materialsDb = scope.ServiceProvider.GetRequiredService<MaterialsDbContext>();
     var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
 
     for (int i = 1; i <= 5; i++)
@@ -201,8 +244,10 @@ using (var scope = app.Services.CreateScope())
             await EnsureContextTablesAsync(academicsDb, "academics");
             await EnsureContextTablesAsync(assignmentsDb, "assignments");
             await EnsureContextTablesAsync(communicationDb, "communication");
+            await EnsureContextTablesAsync(materialsDb, "materials");
+            await MigrateLegacyMaterialsAsync(materialsDb);
             await EnsureContextTablesAsync(db);
-            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, communicationDb, db);
+            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, communicationDb, materialsDb);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;
         }

@@ -8,7 +8,8 @@ using EduHub.Communication.Infrastructure;
 using EduHub.Identity.Domain;
 using EduHub.Identity.Application.Common;
 using EduHub.Identity.Infrastructure;
-using EduHub.Api.Modules.Materials;
+using EduHub.Materials.Domain;
+using EduHub.Materials.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduHub.Api.Infrastructure;
@@ -20,7 +21,7 @@ public static class DemoSeeder
         AcademicsDbContext academicsDb,
         AssignmentsDbContext assignmentsDb,
         CommunicationDbContext communicationDb,
-        EduHubDbContext db)
+        MaterialsDbContext materialsDb)
     {
         if (await identityDb.Users.AnyAsync()) return;
 
@@ -243,10 +244,10 @@ public static class DemoSeeder
             SortOrder = 2
         };
 
-        db.MaterialCategories.AddRange(cat1, cat2);
-        await db.SaveChangesAsync();
+        materialsDb.MaterialCategories.AddRange(cat1, cat2);
+        await materialsDb.SaveChangesAsync();
 
-        db.Materials.AddRange(
+        materialsDb.Materials.AddRange(
             new Material
             {
                 ClassRoomId = class1.Id,
@@ -274,6 +275,6 @@ public static class DemoSeeder
                 FileSizeBytes = 1120000
             }
         );
-        await db.SaveChangesAsync();
+        await materialsDb.SaveChangesAsync();
     }
 }

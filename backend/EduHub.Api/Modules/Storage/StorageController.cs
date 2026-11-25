@@ -1,3 +1,4 @@
+using EduHub.Contracts;
 using EduHub.Shared.Exceptions;
 using EduHub.Shared.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -72,4 +73,3 @@ public class StorageController(IStorageService storage) : ControllerBase
         return File(fileData.Value.Stream, fileData.Value.ContentType, downloadName);
     }
 }
-

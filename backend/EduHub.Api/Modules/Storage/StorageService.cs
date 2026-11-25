@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using EduHub.Contracts;
 
 namespace EduHub.Api.Modules.Storage;
 
@@ -115,4 +116,3 @@ public class StorageService : IStorageService
         return Task.CompletedTask;
     }
 }
-
