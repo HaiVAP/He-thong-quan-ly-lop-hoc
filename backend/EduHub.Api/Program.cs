@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using EduHub.Shared.Events;
 using EduHub.Shared.Middlewares;
+using EduHub.Contracts;
 using EduHub.Api.Infrastructure;
 using EduHub.Identity;
 using EduHub.Identity.Infrastructure;
@@ -8,11 +10,14 @@ using EduHub.Academics;
 using EduHub.Academics.Infrastructure;
 using EduHub.Assignments;
 using EduHub.Assignments.Infrastructure;
+using EduHub.Communication;
+using EduHub.Communication.Infrastructure;
+using EduHub.Materials;
+using EduHub.Materials.Infrastructure;
+using EduHub.Statistics;
 using EduHub.Api.Modules.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -26,6 +31,9 @@ builder.Services.AddControllers()
     .AddApplicationPart(typeof(IdentityModuleExtensions).Assembly)
     .AddApplicationPart(typeof(AcademicsModuleExtensions).Assembly)
     .AddApplicationPart(typeof(AssignmentsModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(CommunicationModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(MaterialsModuleExtensions).Assembly)
+    .AddApplicationPart(typeof(StatisticsModuleExtensions).Assembly)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -73,12 +81,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // ==========================================
-// 3. Cơ sở dữ liệu (PostgreSQL)
-// ==========================================
-builder.Services.AddDbContext<EduHubDbContext>(options =>
-    options.UseNpgsql(cfg.GetConnectionString("DefaultConnection")));
-
-// ==========================================
 // 4. Xác thực & Phân quyền (JWT Bearer)
 // ==========================================
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -98,9 +100,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddScoped<IEventBus, InMemoryEventBus>();
+
 builder.Services.AddIdentityModule(cfg);
 builder.Services.AddAcademicsModule(cfg);
 builder.Services.AddAssignmentsModule(cfg);
+builder.Services.AddCommunicationModule(cfg);
+builder.Services.AddMaterialsModule(cfg);
+builder.Services.AddStatisticsModule();
 builder.Services.AddSingleton<IStorageService, StorageService>();
 
 // ==========================================
@@ -153,30 +161,42 @@ app.MapGet("/", () => Results.Ok(new
     health = "/health"
 }));
 
-// Auto migrate / seed database in development với cơ chế thử lại (Retry)
-static async Task EnsureContextTablesAsync(DbContext context, string? schema = null)
+// Auto migrate / seed database with retry.
+static async Task MigrateLegacyMaterialsAsync(MaterialsDbContext context)
 {
-    if (!string.IsNullOrEmpty(schema))
-    {
-        try
-        {
-            await context.Database.ExecuteSqlRawAsync($"CREATE SCHEMA IF NOT EXISTS \"{schema}\";");
-        }
-        catch { }
-    }
+    await context.Database.ExecuteSqlRawAsync("""
+        DO $$
+        BEGIN
+            IF to_regclass('public."MaterialCategories"') IS NOT NULL THEN
+                INSERT INTO materials."MaterialCategories"
+                    ("Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "Name", "Description", "SortOrder")
+                SELECT "Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "Name", "Description", "SortOrder"
+                FROM public."MaterialCategories"
+                ON CONFLICT ("Id") DO NOTHING;
 
-    try
-    {
-        await context.Database.EnsureCreatedAsync();
-    }
-    catch { }
+                PERFORM setval(
+                    pg_get_serial_sequence('materials."MaterialCategories"', 'Id'),
+                    GREATEST(COALESCE((SELECT MAX("Id") FROM materials."MaterialCategories"), 1), 1),
+                    EXISTS(SELECT 1 FROM materials."MaterialCategories"));
+            END IF;
 
-    try
-    {
-        var creator = (IRelationalDatabaseCreator)context.Database.GetService<IDatabaseCreator>();
-        await creator.CreateTablesAsync();
-    }
-    catch { }
+            IF to_regclass('public."Materials"') IS NOT NULL THEN
+                INSERT INTO materials."Materials"
+                    ("Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "CategoryId", "CreatedById",
+                     "Title", "Description", "FileName", "FileKey", "FileUrl", "MimeType", "FileSizeBytes")
+                SELECT "Id", "CreatedAt", "UpdatedAt", "ClassRoomId", "CategoryId", "CreatedById",
+                       "Title", "Description", "FileName", "FileKey", "FileUrl", "MimeType", "FileSizeBytes"
+                FROM public."Materials"
+                ON CONFLICT ("Id") DO NOTHING;
+
+                PERFORM setval(
+                    pg_get_serial_sequence('materials."Materials"', 'Id'),
+                    GREATEST(COALESCE((SELECT MAX("Id") FROM materials."Materials"), 1), 1),
+                    EXISTS(SELECT 1 FROM materials."Materials"));
+            END IF;
+        END
+        $$;
+        """);
 }
 
 using (var scope = app.Services.CreateScope())
@@ -185,17 +205,20 @@ using (var scope = app.Services.CreateScope())
     var identityDb = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
     var academicsDb = scope.ServiceProvider.GetRequiredService<AcademicsDbContext>();
     var assignmentsDb = scope.ServiceProvider.GetRequiredService<AssignmentsDbContext>();
-    var db = scope.ServiceProvider.GetRequiredService<EduHubDbContext>();
+    var communicationDb = scope.ServiceProvider.GetRequiredService<CommunicationDbContext>();
+    var materialsDb = scope.ServiceProvider.GetRequiredService<MaterialsDbContext>();
 
     for (int i = 1; i <= 5; i++)
     {
         try
         {
-            await EnsureContextTablesAsync(identityDb, "identity");
-            await EnsureContextTablesAsync(academicsDb, "academics");
-            await EnsureContextTablesAsync(assignmentsDb, "assignments");
-            await EnsureContextTablesAsync(db);
-            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, db);
+            await identityDb.Database.MigrateAsync();
+            await academicsDb.Database.MigrateAsync();
+            await assignmentsDb.Database.MigrateAsync();
+            await communicationDb.Database.MigrateAsync();
+            await materialsDb.Database.MigrateAsync();
+            await MigrateLegacyMaterialsAsync(materialsDb);
+            await DemoSeeder.SeedAsync(identityDb, academicsDb, assignmentsDb, communicationDb, materialsDb);
             logger.LogInformation("Cơ sở dữ liệu EduHub và dữ liệu mẫu DemoSeeder đã sẵn sàng.");
             break;
         }

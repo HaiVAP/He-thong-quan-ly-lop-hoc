@@ -2,12 +2,18 @@ using EduHub.Assignments.Application.DTOs;
 using EduHub.Assignments.Domain;
 using EduHub.Assignments.Infrastructure;
 using EduHub.Contracts;
+using EduHub.Contracts.Events;
+using EduHub.Shared.Events;
 using EduHub.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduHub.Assignments.Application.Services;
 
-public class AssignmentService(AssignmentsDbContext db, IClassAccess classAccess, IUserDirectory userDirectory) : IAssignmentService
+public class AssignmentService(
+    AssignmentsDbContext db,
+    IClassAccess classAccess,
+    IUserDirectory userDirectory,
+    IEventBus eventBus) : IAssignmentService
 {
     public async Task<List<Assignment>> ListByClassAsync(int classId, int currentUserId, bool isAdmin)
     {
@@ -53,6 +59,14 @@ public class AssignmentService(AssignmentsDbContext db, IClassAccess classAccess
         db.Assignments.Add(assignment);
         await db.SaveChangesAsync();
 
+        await eventBus.PublishAsync(new AssignmentCreatedEvent(
+            assignment.Id,
+            assignment.ClassRoomId,
+            assignment.CreatedById,
+            assignment.Title,
+            assignment.Deadline,
+            assignment.CreatedAt));
+
         return assignment;
     }
 
@@ -89,6 +103,15 @@ public class AssignmentService(AssignmentsDbContext db, IClassAccess classAccess
 
         db.Submissions.Add(submission);
         await db.SaveChangesAsync();
+
+        await eventBus.PublishAsync(new SubmissionSubmittedEvent(
+            submission.Id,
+            assignment.Id,
+            assignment.Title,
+            assignment.ClassRoomId,
+            submission.StudentId,
+            submission.AttemptNumber,
+            submission.SubmittedAt));
 
         return submission;
     }
@@ -155,6 +178,16 @@ public class AssignmentService(AssignmentsDbContext db, IClassAccess classAccess
         submission.GradedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync();
+
+        await eventBus.PublishAsync(new SubmissionGradedEvent(
+            submission.Id,
+            submission.AssignmentId,
+            submission.Assignment.Title,
+            submission.Assignment.ClassRoomId,
+            submission.StudentId,
+            currentUserId,
+            request.Score,
+            submission.GradedAt.Value));
 
         return submission;
     }

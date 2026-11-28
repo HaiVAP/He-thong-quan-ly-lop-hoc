@@ -3,17 +3,25 @@ using EduHub.Academics.Domain;
 using EduHub.Academics.Infrastructure;
 using EduHub.Assignments.Domain;
 using EduHub.Assignments.Infrastructure;
+using EduHub.Communication.Domain;
+using EduHub.Communication.Infrastructure;
 using EduHub.Identity.Domain;
 using EduHub.Identity.Application.Common;
 using EduHub.Identity.Infrastructure;
-using EduHub.Api.Modules.Materials;
+using EduHub.Materials.Domain;
+using EduHub.Materials.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduHub.Api.Infrastructure;
 
 public static class DemoSeeder
 {
-    public static async Task SeedAsync(IdentityDbContext identityDb, AcademicsDbContext academicsDb, AssignmentsDbContext assignmentsDb, EduHubDbContext db)
+    public static async Task SeedAsync(
+        IdentityDbContext identityDb,
+        AcademicsDbContext academicsDb,
+        AssignmentsDbContext assignmentsDb,
+        CommunicationDbContext communicationDb,
+        MaterialsDbContext materialsDb)
     {
         if (await identityDb.Users.AnyAsync()) return;
 
@@ -99,53 +107,70 @@ public static class DemoSeeder
         {
             Name = "Kỹ thuật Phần mềm",
             Code = "KTPM",
-            Description = "Khoa Kỹ thuật phần mềm & Hệ thống thông tin"
+            Description = "Khoa Kỹ thuật Phần mềm và Hệ thống Thông tin"
         };
 
         academicsDb.Departments.AddRange(deptCntt, deptKhmt, deptKtpm);
         await academicsDb.SaveChangesAsync();
 
-        // 3. Seed Classes
+        // 3. Seed ClassRooms
         var class1 = new ClassRoom
         {
-            Name = "Lập trình Web nâng cao - Nhóm 01",
-            Description = "Môn học chuyên sâu về ASP.NET Core & React TypeScript",
             DepartmentId = deptCntt.Id,
             LecturerId = lecturer1.Id,
-            JoinCode = "WEB01ADV",
+            Name = "Kiến trúc Phần mềm Nâng cao",
+            JoinCode = "SE301-2026",
+            Description = "Học phần nghiên cứu Clean Architecture, DDD và Microservices",
             Status = "Active"
         };
 
         var class2 = new ClassRoom
         {
-            Name = "Kiến trúc Phần mềm Modular Monolith",
-            Description = "Tìm hiểu thiết kế kiến trúc phần mềm hiện đại",
             DepartmentId = deptKtpm.Id,
-            LecturerId = lecturer1.Id,
-            JoinCode = "ARCH2026",
-            Status = "Active"
-        };
-
-        var class3 = new ClassRoom
-        {
-            Name = "Nhập môn Trí tuệ Nhân tạo",
-            Description = "Lý thuyết và thực hành Machine Learning cơ bản",
-            DepartmentId = deptKhmt.Id,
             LecturerId = lecturer2.Id,
-            JoinCode = "AI101BAS",
+            Name = "Phát triển Ứng dụng Web với .NET 8",
+            JoinCode = "WEB202-2026",
+            Description = "Học phần xây dựng ứng dụng Web API và React SPA",
             Status = "Active"
         };
 
-        academicsDb.Classes.AddRange(class1, class2, class3);
+        academicsDb.Classes.AddRange(class1, class2);
         await academicsDb.SaveChangesAsync();
 
-        // 4. Seed Class Members (Enrollments)
-        academicsDb.ClassMembers.AddRange(
-            new ClassMember { ClassRoomId = class1.Id, StudentId = student1.Id, Status = "Active" },
-            new ClassMember { ClassRoomId = class1.Id, StudentId = student2.Id, Status = "Active" },
-            new ClassMember { ClassRoomId = class1.Id, StudentId = student3.Id, Status = "Active" },
-            new ClassMember { ClassRoomId = class2.Id, StudentId = student1.Id, Status = "Active" }
-        );
+        // 4. Seed Class Members
+        var member1 = new ClassMember
+        {
+            ClassRoomId = class1.Id,
+            StudentId = student1.Id,
+            JoinedAt = DateTime.UtcNow.AddDays(-10),
+            Status = "Active"
+        };
+
+        var member2 = new ClassMember
+        {
+            ClassRoomId = class1.Id,
+            StudentId = student2.Id,
+            JoinedAt = DateTime.UtcNow.AddDays(-8),
+            Status = "Active"
+        };
+
+        var member3 = new ClassMember
+        {
+            ClassRoomId = class2.Id,
+            StudentId = student2.Id,
+            JoinedAt = DateTime.UtcNow.AddDays(-5),
+            Status = "Active"
+        };
+
+        var member4 = new ClassMember
+        {
+            ClassRoomId = class2.Id,
+            StudentId = student3.Id,
+            JoinedAt = DateTime.UtcNow.AddDays(-3),
+            Status = "Active"
+        };
+
+        academicsDb.ClassMembers.AddRange(member1, member2, member3, member4);
         await academicsDb.SaveChangesAsync();
 
         // 5. Seed Assignments & Submissions
@@ -190,7 +215,19 @@ public static class DemoSeeder
         assignmentsDb.Submissions.Add(sub1);
         await assignmentsDb.SaveChangesAsync();
 
-        // 6. Seed Material Categories & Materials (Sprint 2 / Module 2)
+        // 6. Seed Announcements (Communication)
+        var announcement1 = new Announcement
+        {
+            ClassRoomId = class1.Id,
+            AuthorId = lecturer1.Id,
+            Title = "Chào mừng các bạn sinh viên đến với môn học Kiến trúc Phần mềm",
+            Content = "Chào các bạn! Đây là kênh thông báo chính thức của lớp học. Mọi tài liệu và bài tập sẽ được cập nhật thường xuyên trên hệ thống.",
+            CreatedAt = DateTime.UtcNow.AddDays(-3)
+        };
+        communicationDb.Announcements.Add(announcement1);
+        await communicationDb.SaveChangesAsync();
+
+        // 7. Seed Material Categories & Materials (Sprint 2 / Module 2)
         var cat1 = new MaterialCategory
         {
             ClassRoomId = class1.Id,
@@ -207,10 +244,10 @@ public static class DemoSeeder
             SortOrder = 2
         };
 
-        db.MaterialCategories.AddRange(cat1, cat2);
-        await db.SaveChangesAsync();
+        materialsDb.MaterialCategories.AddRange(cat1, cat2);
+        await materialsDb.SaveChangesAsync();
 
-        db.Materials.AddRange(
+        materialsDb.Materials.AddRange(
             new Material
             {
                 ClassRoomId = class1.Id,
@@ -238,6 +275,6 @@ public static class DemoSeeder
                 FileSizeBytes = 1120000
             }
         );
-        await db.SaveChangesAsync();
+        await materialsDb.SaveChangesAsync();
     }
 }

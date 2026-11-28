@@ -3,12 +3,14 @@ using EduHub.Academics.Application.DTOs;
 using EduHub.Academics.Domain;
 using EduHub.Academics.Infrastructure;
 using EduHub.Contracts;
+using EduHub.Contracts.Events;
+using EduHub.Shared.Events;
 using EduHub.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduHub.Academics.Application.Services;
 
-public class ClassService(AcademicsDbContext db, IUserDirectory userDirectory) : IClassService
+public class ClassService(AcademicsDbContext db, IUserDirectory userDirectory, IEventBus eventBus) : IClassService
 {
     private static string GenerateJoinCode() =>
         Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToUpperInvariant();
@@ -285,6 +287,13 @@ public class ClassService(AcademicsDbContext db, IUserDirectory userDirectory) :
             existingMember.JoinedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
+            await eventBus.PublishAsync(new StudentJoinedClassEvent(
+                c.Id,
+                c.Name,
+                currentUserId,
+                c.LecturerId,
+                existingMember.JoinedAt));
+
             return (c.Id, c.Name);
         }
 
@@ -298,6 +307,13 @@ public class ClassService(AcademicsDbContext db, IUserDirectory userDirectory) :
 
         db.ClassMembers.Add(member);
         await db.SaveChangesAsync();
+
+        await eventBus.PublishAsync(new StudentJoinedClassEvent(
+            c.Id,
+            c.Name,
+            currentUserId,
+            c.LecturerId,
+            member.JoinedAt));
 
         return (c.Id, c.Name);
     }

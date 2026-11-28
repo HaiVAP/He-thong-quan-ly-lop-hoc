@@ -1,4 +1,4 @@
-namespace EduHub.Api.Modules.Storage;
+namespace EduHub.Contracts;
 
 public record PresignedUploadResponse(string FileKey, string UploadUrl, string Method, DateTime ExpiresAt, string DownloadUrl);
 
@@ -29,4 +29,3 @@ public interface IStorageService
     /// </summary>
     Task DeleteFileAsync(string fileKey);
 }
-

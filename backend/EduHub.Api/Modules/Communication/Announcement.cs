@@ -1,3 +1,0 @@
-using EduHub.Academics.Domain;using EduHub.Identity.Domain;
-namespace EduHub.Api.Modules.Communication;
-public class Announcement{public int Id{get;set;}public int ClassRoomId{get;set;}public ClassRoom ClassRoom{get;set;}=null!;public int AuthorId{get;set;}public User Author{get;set;}=null!;public string Title{get;set;}="";public string Content{get;set;}="";public DateTime CreatedAt{get;set;}=DateTime.UtcNow;}
