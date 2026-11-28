@@ -67,5 +67,12 @@ public class AssignmentsController(IAssignmentService assignmentService) : Contr
         var submission = await assignmentService.GradeAsync(id, CurrentUserId, IsAdmin, request);
         return Ok(ApiResponse.Ok(submission, "Chấm điểm bài nộp thành công."));
     }
+
+    [HttpGet("api/submissions/{id:int}/download")]
+    public async Task<IActionResult> DownloadSubmissionFile(int id, [FromQuery] bool inline = false)
+    {
+        var result = await assignmentService.GetSubmissionDownloadLinkAsync(id, CurrentUserId, IsAdmin, inline);
+        return Ok(ApiResponse.Ok(result));
+    }
 }
 

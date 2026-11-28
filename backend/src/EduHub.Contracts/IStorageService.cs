@@ -1,31 +1,31 @@
 namespace EduHub.Contracts;
 
-public record PresignedUploadResponse(string FileKey, string UploadUrl, string Method, DateTime ExpiresAt, string DownloadUrl);
+public record PresignedUploadResponse(string FileKey, string UploadUrl, string Method, DateTime ExpiresAt);
 
 public interface IStorageService
 {
     /// <summary>
-    /// Ký URL tải lên trực tiếp (Presigned Upload URL) với hạn dùng 15 phút
+    /// Ký URL tải lên trực tiếp (Presigned Upload URL - PUT, hạn 15 phút)
     /// </summary>
     Task<PresignedUploadResponse> GeneratePresignedUploadUrlAsync(string originalFileName, string contentType, long sizeBytes);
 
     /// <summary>
-    /// Ký URL tải xuống an toàn (Presigned Download URL) có thời hạn
+    /// Ký URL tải xuống / xem trực tiếp (Presigned Download URL - GET) có thời hạn
     /// </summary>
-    Task<string> GeneratePresignedDownloadUrlAsync(string fileKey, string originalFileName, int expiryMinutes = 60);
+    Task<string> GeneratePresignedDownloadUrlAsync(string fileKey, string originalFileName, int expiryMinutes = 60, bool inline = false);
 
     /// <summary>
-    /// Lưu tệp vào bộ nhớ cục bộ (cho chế độ Local Development / Offline)
+    /// Upload trực tiếp stream lên MinIO từ backend
     /// </summary>
-    Task<string> SaveLocalFileAsync(Stream stream, string fileKey, string originalFileName);
+    Task UploadStreamAsync(Stream stream, string fileKey, string contentType, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Đọc stream tệp từ bộ nhớ cục bộ
+    /// Kiểm tra tệp có tồn tại trên MinIO hay không
     /// </summary>
-    Task<(Stream Stream, string ContentType, string FileName)?> GetLocalFileAsync(string fileKey);
+    Task<bool> ExistsAsync(string fileKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Xóa tệp
+    /// Xóa tệp trên MinIO
     /// </summary>
     Task DeleteFileAsync(string fileKey);
 }

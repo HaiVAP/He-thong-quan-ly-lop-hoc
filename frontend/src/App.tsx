@@ -166,6 +166,8 @@ export default function App() {
   const [assignDeadline, setAssignDeadline] = useState('');
   const [submitContent, setSubmitContent] = useState('');
   const [submitFileUrl, setSubmitFileUrl] = useState('');
+  const [submitFile, setSubmitFile] = useState<File | null>(null);
+  const [isUploadingSubmission, setIsUploadingSubmission] = useState(false);
   const [gradeScore, setGradeScore] = useState<number>(10);
   const [gradeFeedback, setGradeFeedback] = useState('');
   const [announceTitle, setAnnounceTitle] = useState('');
@@ -454,26 +456,74 @@ export default function App() {
     }
   }
 
+  async function uploadFileToMinio(file: File): Promise<string> {
+    const contentType = file.type || 'application/octet-stream';
+    const presigned = await api('/api/files/presigned-upload-url', {
+      method: 'POST',
+      body: JSON.stringify({
+        fileName: file.name,
+        contentType,
+        sizeBytes: file.size
+      })
+    });
+
+    const uploadResponse = await fetch(presigned.uploadUrl, {
+      method: presigned.method || 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': contentType
+      }
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Tải tệp lên MinIO thất bại.');
+    }
+
+    return presigned.fileKey as string;
+  }
+
   // Submit Assignment
   async function handleSubmitAssignment(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedAssignment) return;
     try {
+      setIsUploadingSubmission(true);
+      let fileUrlToSave = submitFileUrl;
+      if (submitFile) {
+        fileUrlToSave = await uploadFileToMinio(submitFile);
+      }
+
       await api(`/api/assignments/${selectedAssignment.id}/submissions`, {
         method: 'POST',
         body: JSON.stringify({
           content: submitContent,
-          fileUrl: submitFileUrl
+          fileUrl: fileUrlToSave
         })
       });
       setShowSubmitModal(false);
       setSubmitContent('');
       setSubmitFileUrl('');
+      setSubmitFile(null);
       setMessage('Nộp bài tập thành công!');
       if (selectedClass) {
         const a = await api(`/api/classes/${selectedClass.id}/assignments`);
         setAssignments(a || []);
       }
+    } catch (err) {
+      setMessage((err as Error).message);
+    } finally {
+      setIsUploadingSubmission(false);
+    }
+  }
+
+  async function handleOpenSubmissionFile(submissionId: number, existingUrl?: string) {
+    if (existingUrl && (existingUrl.startsWith('http://') || existingUrl.startsWith('https://'))) {
+      window.open(existingUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    try {
+      const res = await api(`/api/submissions/${submissionId}/download`);
+      window.open(res.downloadUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setMessage((err as Error).message);
     }
@@ -612,29 +662,7 @@ export default function App() {
 
     try {
       setIsUploadingMaterial(true);
-      const presigned = await api('/api/files/presigned-upload-url', {
-        method: 'POST',
-        body: JSON.stringify({
-          fileName: newMaterialFile.name,
-          contentType: newMaterialFile.type || 'application/octet-stream',
-          sizeBytes: newMaterialFile.size
-        })
-      });
-
-      const uploadUrl = presigned.uploadUrl.startsWith('http') ? presigned.uploadUrl : `${API}${presigned.uploadUrl}`;
-      const uploadResponse = await fetch(uploadUrl, {
-        method: presigned.method || 'POST',
-        body: newMaterialFile,
-        headers: {
-          'Content-Type': newMaterialFile.type || 'application/octet-stream'
-        }
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Tải tệp lên thất bại.');
-      }
-
-      const downloadUrl = presigned.downloadUrl.startsWith('http') ? presigned.downloadUrl : `${API}${presigned.downloadUrl}`;
+      const fileKey = await uploadFileToMinio(newMaterialFile);
 
       await api(`/api/classes/${selectedClass.id}/materials`, {
         method: 'POST',
@@ -643,8 +671,8 @@ export default function App() {
           description: newMaterialDescription,
           categoryId: newMaterialCategoryId,
           fileName: newMaterialFile.name,
-          fileKey: presigned.fileKey,
-          fileUrl: downloadUrl,
+          fileKey,
+          fileUrl: '',
           mimeType: newMaterialFile.type || 'application/octet-stream',
           fileSizeBytes: newMaterialFile.size
         })
@@ -676,11 +704,10 @@ export default function App() {
     }
   }
 
-  async function handleOpenMaterial(materialId: number) {
+  async function handleOpenMaterial(materialId: number, inline = false) {
     try {
-      const res = await api(`/api/materials/${materialId}/download`);
-      const finalUrl = res.downloadUrl.startsWith('http') ? res.downloadUrl : `${API}${res.downloadUrl}`;
-      window.open(finalUrl, '_blank', 'noopener,noreferrer');
+      const res = await api(`/api/materials/${materialId}/download?inline=${inline}`);
+      window.open(res.downloadUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setMessage((err as Error).message);
     }
@@ -1180,7 +1207,15 @@ export default function App() {
                             <td>{new Date(s.submittedAt).toLocaleString('vi-VN')}</td>
                             <td>
                               {s.content && <p className="sub-text">{s.content}</p>}
-                              {s.fileUrl && <a href={s.fileUrl} target="_blank" rel="noreferrer" className="link-file">Xem tệp đính kèm</a>}
+                              {s.fileUrl && (
+                                <button
+                                  type="button"
+                                  className="link-file"
+                                  onClick={() => handleOpenSubmissionFile(s.id, s.fileUrl)}
+                                >
+                                  Xem / Tải tệp đính kèm
+                                </button>
+                              )}
                             </td>
                             <td>
                               {s.score !== null && s.score !== undefined ? (
@@ -1294,9 +1329,14 @@ export default function App() {
                             <small>{material.createdAt ? new Date(material.createdAt).toLocaleDateString('vi-VN') : ''}</small>
                           </div>
                           <div className="material-actions">
-                            <button className="btn-secondary" onClick={() => handleOpenMaterial(material.id)}>
-                              <FileText size={14} /> Xem / Tải
+                            <button className="btn-secondary" onClick={() => handleOpenMaterial(material.id, false)}>
+                              <FileText size={14} /> Tải về
                             </button>
+                            {(material.mimeType?.startsWith('image/') || material.mimeType?.startsWith('video/') || material.mimeType === 'application/pdf') && (
+                              <button className="btn-secondary" onClick={() => handleOpenMaterial(material.id, true)}>
+                                Xem trực tiếp
+                              </button>
+                            )}
                           </div>
                         </article>
                       ))}
@@ -1480,10 +1520,20 @@ export default function App() {
                 <textarea rows={3} placeholder="Mô tả bài làm..." value={submitContent} onChange={e => setSubmitContent(e.target.value)} />
               </div>
               <div className="form-group">
-                <label>Link tệp bài nộp (URL)</label>
+                <label>Tệp bài nộp (MinIO Presigned Upload)</label>
+                <input
+                  type="file"
+                  onChange={e => setSubmitFile(e.target.files?.[0] ?? null)}
+                />
+                {submitFile && <small className="file-hint">Đã chọn: {submitFile.name} ({formatFileSize(submitFile.size)})</small>}
+              </div>
+              <div className="form-group">
+                <label>Hoặc Link tệp bài nộp (URL tùy chọn)</label>
                 <input type="url" placeholder="https://..." value={submitFileUrl} onChange={e => setSubmitFileUrl(e.target.value)} />
               </div>
-              <button type="submit" className="btn-primary full">Xác nhận Nộp bài</button>
+              <button type="submit" className="btn-primary full" disabled={isUploadingSubmission}>
+                {isUploadingSubmission ? 'Đang tải tệp & nộp bài...' : 'Xác nhận Nộp bài'}
+              </button>
             </form>
           </div>
         </div>

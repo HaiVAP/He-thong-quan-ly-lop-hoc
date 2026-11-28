@@ -13,6 +13,7 @@ public class AssignmentService(
     AssignmentsDbContext db,
     IClassAccess classAccess,
     IUserDirectory userDirectory,
+    IStorageService storage,
     IEventBus eventBus) : IAssignmentService
 {
     public async Task<List<Assignment>> ListByClassAsync(int classId, int currentUserId, bool isAdmin)
@@ -190,6 +191,34 @@ public class AssignmentService(
             submission.GradedAt.Value));
 
         return submission;
+    }
+
+    public async Task<object> GetSubmissionDownloadLinkAsync(int submissionId, int currentUserId, bool isAdmin, bool inline = false)
+    {
+        var submission = await db.Submissions
+            .Include(x => x.Assignment)
+            .SingleOrDefaultAsync(x => x.Id == submissionId);
+
+        if (submission is null)
+            throw new NotFoundException($"Không tìm thấy bài nộp có ID {submissionId}.");
+
+        var isLecturer = await classAccess.IsLecturerOfClassAsync(submission.Assignment.ClassRoomId, currentUserId);
+        if (!isAdmin && submission.StudentId != currentUserId && submission.Assignment.CreatedById != currentUserId && !isLecturer)
+            throw new ForbiddenException("Bạn không có quyền tải tệp đính kèm của bài nộp này.");
+
+        if (string.IsNullOrWhiteSpace(submission.FileUrl))
+            throw new NotFoundException("Bài nộp này không có tệp đính kèm.");
+
+        var fileUrl = submission.FileUrl.Trim();
+        if (fileUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            fileUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return new { submission.Id, downloadUrl = fileUrl };
+        }
+
+        var fileName = Path.GetFileName(fileUrl);
+        var downloadUrl = await storage.GeneratePresignedDownloadUrlAsync(fileUrl, fileName, 60, inline);
+        return new { submission.Id, fileName, downloadUrl };
     }
 }
 
