@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using EduHub.Shared.Events;
 using EduHub.Shared.Middlewares;
 using EduHub.Contracts;
 using EduHub.Api.Infrastructure;
@@ -99,6 +100,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddScoped<IEventBus, InMemoryEventBus>();
 
 builder.Services.AddIdentityModule(cfg);
 builder.Services.AddAcademicsModule(cfg);

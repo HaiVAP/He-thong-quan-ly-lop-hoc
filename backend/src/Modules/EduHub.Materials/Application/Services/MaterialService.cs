@@ -1,7 +1,9 @@
 using EduHub.Contracts;
+using EduHub.Contracts.Events;
 using EduHub.Materials.Application.DTOs;
 using EduHub.Materials.Domain;
 using EduHub.Materials.Infrastructure;
+using EduHub.Shared.Events;
 using EduHub.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +13,8 @@ public class MaterialService(
     MaterialsDbContext db,
     IClassAccess classAccess,
     IUserDirectory userDirectory,
-    IStorageService storage) : IMaterialService
+    IStorageService storage,
+    IEventBus eventBus) : IMaterialService
 {
     public async Task<List<MaterialCategoryResponseDto>> GetCategoriesAsync(int classId, int currentUserId, bool isAdmin)
     {
@@ -146,6 +149,15 @@ public class MaterialService(
 
         db.Materials.Add(material);
         await db.SaveChangesAsync();
+
+        await eventBus.PublishAsync(new MaterialUploadedEvent(
+            material.Id,
+            material.ClassRoomId,
+            material.CreatedById,
+            material.Title,
+            material.FileName,
+            material.CreatedAt));
+
         return material;
     }
 
