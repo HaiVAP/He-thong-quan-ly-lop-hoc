@@ -12,6 +12,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    user: "0:0"
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-eduhub_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-eduhub_minio_secret_123}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:5173
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [eduhub_minio:/data]
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest
+    depends_on: [minio]
+    restart: on-failure
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:-eduhub_minio}:${MINIO_ROOT_PASSWORD:-eduhub_minio_secret_123}@minio:9000
+    command: mb --ignore-existing local/${MINIO_BUCKET:-eduhub-bucket}
+
   api:
     build: ./backend
     environment:
@@ -22,12 +42,21 @@ services:
       Jwt__Issuer: EduHub
       Jwt__Audience: EduHubClient
       Cors__Frontend: http://localhost:5173
+      Storage__Minio__InternalEndpoint: http://minio:9000
+      Storage__Minio__PublicEndpoint: http://localhost:9000
+      Storage__Minio__AccessKey: ${MINIO_ROOT_USER:-eduhub_minio}
+      Storage__Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-eduhub_minio_secret_123}
+      Storage__Minio__BucketName: ${MINIO_BUCKET:-eduhub-bucket}
     ports: ["8080:8080"]
     depends_on:
       db: { condition: service_healthy }
+      minio: { condition: service_started }
+
   frontend:
     build: ./frontend
     ports: ["5173:80"]
     depends_on: [api]
+
 volumes:
   eduhub_pgdata:
+  eduhub_minio:

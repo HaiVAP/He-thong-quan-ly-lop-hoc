@@ -61,9 +61,9 @@ public class MaterialsController(IMaterialService materialService) : ControllerB
     }
 
     [HttpGet("api/materials/{id:int}/download")]
-    public async Task<IActionResult> GetDownloadLink(int id)
+    public async Task<IActionResult> GetDownloadLink(int id, [FromQuery] bool inline = false)
     {
-        var result = await materialService.GetDownloadLinkAsync(id, CurrentUserId, IsAdmin);
+        var result = await materialService.GetDownloadLinkAsync(id, CurrentUserId, IsAdmin, inline);
         return Ok(ApiResponse.Ok(result));
     }
 }

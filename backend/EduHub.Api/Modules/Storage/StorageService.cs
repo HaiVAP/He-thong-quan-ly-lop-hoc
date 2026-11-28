@@ -1,31 +1,50 @@
+using System.Net;
 using System.Security.Cryptography;
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
 using EduHub.Contracts;
 
 namespace EduHub.Api.Modules.Storage;
 
 public class StorageService : IStorageService
 {
-    private readonly IConfiguration _config;
-    private readonly IWebHostEnvironment _env;
-    private readonly string _localStoragePath;
-    private readonly bool _useR2;
+    private readonly string _bucketName;
+    private readonly AmazonS3Client _internalClient;
+    private readonly AmazonS3Client _publicClient;
+    private readonly bool _publicIsHttp;
 
-    public StorageService(IConfiguration config, IWebHostEnvironment env)
+    public StorageService(IConfiguration config)
     {
-        _config = config;
-        _env = env;
-        _localStoragePath = Path.Combine(_env.ContentRootPath, _config["Storage:LocalStoragePath"] ?? "uploads");
-        if (!Directory.Exists(_localStoragePath))
-        {
-            Directory.CreateDirectory(_localStoragePath);
-        }
+        var section = config.GetSection("Storage:Minio");
+        var internalEndpoint = section["InternalEndpoint"] ?? "http://minio:9000";
+        var publicEndpoint = section["PublicEndpoint"] ?? "http://localhost:9000";
+        var accessKey = section["AccessKey"] ?? "eduhub_minio";
+        var secretKey = section["SecretKey"] ?? "eduhub_minio_secret_123";
+        _bucketName = section["BucketName"] ?? "eduhub-bucket";
 
-        var provider = _config["Storage:Provider"] ?? "Local";
-        var r2Key = _config["Storage:R2:AccessKeyId"];
-        _useR2 = provider.Equals("CloudflareR2", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(r2Key);
+        var credentials = new BasicAWSCredentials(accessKey, secretKey);
+
+        _internalClient = CreateClient(credentials, internalEndpoint);
+        _publicClient = CreateClient(credentials, publicEndpoint);
+        _publicIsHttp = publicEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
     }
 
-    public Task<PresignedUploadResponse> GeneratePresignedUploadUrlAsync(string originalFileName, string contentType, long sizeBytes)
+    private static AmazonS3Client CreateClient(AWSCredentials credentials, string endpoint)
+    {
+        var s3Config = new AmazonS3Config
+        {
+            ServiceURL = endpoint,
+            ForcePathStyle = true,
+            UseHttp = endpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        };
+        return new AmazonS3Client(credentials, s3Config);
+    }
+
+    public Task<PresignedUploadResponse> GeneratePresignedUploadUrlAsync(
+        string originalFileName,
+        string contentType,
+        long sizeBytes)
     {
         var ext = Path.GetExtension(originalFileName);
         var randomId = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
@@ -34,85 +53,81 @@ public class StorageService : IStorageService
 
         var expiresAt = DateTime.UtcNow.AddMinutes(15);
 
-        if (_useR2)
+        var request = new GetPreSignedUrlRequest
         {
-            // Nếu có cấu hình Cloudflare R2 (S3 API Endpoint)
-            var accountId = _config["Storage:R2:AccountId"];
-            var bucket = _config["Storage:R2:BucketName"];
-            var publicUrl = _config["Storage:R2:PublicUrl"] ?? $"https://{bucket}.{accountId}.r2.cloudflarestorage.com";
-
-            // Giả lập hoặc cấu hình endpoint R2
-            var r2UploadUrl = $"{publicUrl}/{fileKey}?token={Convert.ToHexString(RandomNumberGenerator.GetBytes(16))}";
-            var downloadUrl = $"{publicUrl}/{fileKey}";
-
-            return Task.FromResult(new PresignedUploadResponse(fileKey, r2UploadUrl, "PUT", expiresAt, downloadUrl));
-        }
-
-        // Chế độ Local Storage Fallback: upload qua endpoint của API Server
-        var localUploadUrl = $"/api/files/upload/{fileKey}";
-        var localDownloadUrl = $"/api/files/download/{fileKey}";
-
-        return Task.FromResult(new PresignedUploadResponse(fileKey, localUploadUrl, "POST", expiresAt, localDownloadUrl));
-    }
-
-    public Task<string> GeneratePresignedDownloadUrlAsync(string fileKey, string originalFileName, int expiryMinutes = 60)
-    {
-        if (_useR2)
-        {
-            var publicUrl = _config["Storage:R2:PublicUrl"] ?? "https://pub-r2.eduhub.local";
-            return Task.FromResult($"{publicUrl}/{fileKey}");
-        }
-
-        return Task.FromResult($"/api/files/download/{fileKey}?filename={Uri.EscapeDataString(originalFileName)}");
-    }
-
-    public async Task<string> SaveLocalFileAsync(Stream stream, string fileKey, string originalFileName)
-    {
-        var filePath = Path.Combine(_localStoragePath, fileKey.Replace('/', Path.DirectorySeparatorChar));
-        var dir = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await stream.CopyToAsync(fileStream);
-
-        return $"/api/files/download/{fileKey}?filename={Uri.EscapeDataString(originalFileName)}";
-    }
-
-    public Task<(Stream Stream, string ContentType, string FileName)?> GetLocalFileAsync(string fileKey)
-    {
-        var filePath = Path.Combine(_localStoragePath, fileKey.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(filePath))
-        {
-            return Task.FromResult<(Stream Stream, string ContentType, string FileName)?>(null);
-        }
-
-        var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var ext = Path.GetExtension(filePath).ToLowerInvariant();
-        var contentType = ext switch
-        {
-            ".pdf" => "application/pdf",
-            ".doc" or ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".ppt" or ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            ".zip" or ".rar" => "application/zip",
-            ".png" => "image/png",
-            ".jpg" or ".jpeg" => "image/jpeg",
-            _ => "application/octet-stream"
+            BucketName = _bucketName,
+            Key = fileKey,
+            Verb = HttpVerb.PUT,
+            Expires = expiresAt,
+            ContentType = contentType,
+            Protocol = _publicIsHttp ? Protocol.HTTP : Protocol.HTTPS
         };
 
-        var fileName = Path.GetFileName(filePath);
-        return Task.FromResult<(Stream Stream, string ContentType, string FileName)?>((stream, contentType, fileName));
+        var uploadUrl = _publicClient.GetPreSignedURL(request);
+        return Task.FromResult(new PresignedUploadResponse(fileKey, uploadUrl, "PUT", expiresAt));
     }
 
-    public Task DeleteFileAsync(string fileKey)
+    public Task<string> GeneratePresignedDownloadUrlAsync(
+        string fileKey,
+        string originalFileName,
+        int expiryMinutes = 60,
+        bool inline = false)
     {
-        var filePath = Path.Combine(_localStoragePath, fileKey.Replace('/', Path.DirectorySeparatorChar));
-        if (File.Exists(filePath))
+        var dispositionType = inline ? "inline" : "attachment";
+        var encodedName = Uri.EscapeDataString(originalFileName);
+
+        var request = new GetPreSignedUrlRequest
         {
-            File.Delete(filePath);
+            BucketName = _bucketName,
+            Key = fileKey,
+            Verb = HttpVerb.GET,
+            Expires = DateTime.UtcNow.AddMinutes(expiryMinutes),
+            Protocol = _publicIsHttp ? Protocol.HTTP : Protocol.HTTPS,
+            ResponseHeaderOverrides = new ResponseHeaderOverrides
+            {
+                ContentDisposition = $"{dispositionType}; filename*=UTF-8''{encodedName}"
+            }
+        };
+
+        var downloadUrl = _publicClient.GetPreSignedURL(request);
+        return Task.FromResult(downloadUrl);
+    }
+
+    public async Task UploadStreamAsync(
+        Stream stream,
+        string fileKey,
+        string contentType,
+        CancellationToken cancellationToken = default)
+    {
+        var request = new PutObjectRequest
+        {
+            BucketName = _bucketName,
+            Key = fileKey,
+            InputStream = stream,
+            ContentType = contentType
+        };
+
+        await _internalClient.PutObjectAsync(request, cancellationToken);
+    }
+
+    public async Task<bool> ExistsAsync(string fileKey, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _internalClient.GetObjectMetadataAsync(_bucketName, fileKey, cancellationToken);
+            return true;
         }
-        return Task.CompletedTask;
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+    }
+
+    public async Task DeleteFileAsync(string fileKey)
+    {
+        if (string.IsNullOrWhiteSpace(fileKey))
+            return;
+
+        await _internalClient.DeleteObjectAsync(_bucketName, fileKey);
     }
 }

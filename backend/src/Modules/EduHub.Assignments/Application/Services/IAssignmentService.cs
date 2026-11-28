@@ -10,5 +10,6 @@ public interface IAssignmentService
     Task<Submission> SubmitAsync(int assignmentId, int currentUserId, SubmitAssignmentRequest request);
     Task<List<SubmissionResponseDto>> GetSubmissionsAsync(int assignmentId, int currentUserId, bool isAdmin);
     Task<Submission> GradeAsync(int submissionId, int currentUserId, bool isAdmin, GradeAssignmentRequest request);
+    Task<object> GetSubmissionDownloadLinkAsync(int submissionId, int currentUserId, bool isAdmin, bool inline = false);
 }
 

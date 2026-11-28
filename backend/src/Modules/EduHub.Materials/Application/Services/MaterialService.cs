@@ -124,8 +124,8 @@ public class MaterialService(
         if (!await classAccess.IsLecturerOfClassAsync(classId, currentUserId))
             throw new ForbiddenException("Bạn chỉ có thể đăng tài liệu cho lớp học do mình phụ trách.");
 
-        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.FileUrl))
-            throw new BadRequestException("Tiêu đề và Đường dẫn tệp tài liệu không được để trống.");
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.FileKey))
+            throw new BadRequestException("Tiêu đề và Mã tệp (FileKey) không được để trống.");
 
         if (request.CategoryId.HasValue &&
             !await db.MaterialCategories.AnyAsync(x => x.Id == request.CategoryId.Value && x.ClassRoomId == classId))
@@ -142,7 +142,7 @@ public class MaterialService(
             Description = request.Description?.Trim(),
             FileName = request.FileName.Trim(),
             FileKey = request.FileKey.Trim(),
-            FileUrl = request.FileUrl.Trim(),
+            FileUrl = request.FileUrl?.Trim() ?? string.Empty,
             MimeType = request.MimeType?.Trim(),
             FileSizeBytes = request.FileSizeBytes
         };
@@ -177,7 +177,7 @@ public class MaterialService(
         await db.SaveChangesAsync();
     }
 
-    public async Task<object> GetDownloadLinkAsync(int id, int currentUserId, bool isAdmin)
+    public async Task<object> GetDownloadLinkAsync(int id, int currentUserId, bool isAdmin, bool inline = false)
     {
         var material = await db.Materials.FindAsync(id);
         if (material is null)
@@ -186,12 +186,13 @@ public class MaterialService(
         if (!await classAccess.CanAccessClassAsync(material.ClassRoomId, currentUserId, isAdmin))
             throw new ForbiddenException("Bạn không có quyền tải tài liệu của lớp học này.");
 
-        var downloadUrl = await storage.GeneratePresignedDownloadUrlAsync(material.FileKey, material.FileName);
+        var downloadUrl = await storage.GeneratePresignedDownloadUrlAsync(material.FileKey, material.FileName, 60, inline);
         return new
         {
             material.Id,
             material.Title,
             material.FileName,
+            material.MimeType,
             downloadUrl
         };
     }
